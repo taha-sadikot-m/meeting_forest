@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: meeting-forest
+    runtime: node
+    buildCommand: curl -fsSL https://bun.sh/install | bash && ~/.bun/bin/bun install
+    startCommand: ~/.bun/bin/bun run index.ts
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production

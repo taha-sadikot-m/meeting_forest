@@ -17,6 +17,7 @@ import {
 } from "./src/auth";
 
 const PORT             = parseInt(process.env.PORT || "3000");
+const APP_URL          = process.env.APP_URL || `http://localhost:${PORT}`;
 const LIVEKIT_URL      = process.env.LIVEKIT_URL      || "wss://your-livekit-server.com";
 const LIVEKIT_API_KEY  = process.env.LIVEKIT_API_KEY  || "devkey";
 const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || "devsecret0000000000000000000000";
@@ -358,7 +359,6 @@ serve({
         const inviterName  = (b.inviterName || session?.name || "Someone").trim();
         const meetingLabel = (b.meetingLabel || mid).trim();
         if (!email || !email.includes("@")) return json({ error: "valid email required" }, 400);
-        const APP_URL = process.env.APP_URL || "http://localhost:" + PORT;
         const link = `${APP_URL}/room/${encodeURIComponent(mid)}`;
         await sendMeetingInviteEmail(email, inviterName, meetingLabel, link);
         return json({ ok: true });

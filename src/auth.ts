@@ -74,7 +74,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 // ── Email (Resend) ────────────────────────────────────────────────────────────
 
-const APP_URL    = process.env.APP_URL || "http://localhost:3000";
+const APP_URL    = process.env.APP_URL || `http://localhost:${process.env.PORT || "3000"}`;
 const FROM_EMAIL = process.env.RESEND_EMAIL_ADDRESS || "noreply@meetingforest.app";
 const DEV_MODE   = !process.env.RESEND_API_KEY;
 
