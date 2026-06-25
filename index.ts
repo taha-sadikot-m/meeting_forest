@@ -93,6 +93,7 @@ async function generateToken(room: string, name: string): Promise<string> {
 // ── Server ────────────────────────────────────────────────────────────────────
 serve({
   port: PORT,
+  hostname: "0.0.0.0",  // required for Railway / containerized hosting
 
   async fetch(req) {
     const url  = new URL(req.url);
@@ -468,5 +469,4 @@ serve({
   },
 });
 
-console.log("Meeting Forest running at http://localhost:" + PORT);
-console.log("Memgraph: bolt://localhost:3005  |  GUI: http://localhost:3006");
+console.log(`Meeting Forest running on port ${PORT}`);
