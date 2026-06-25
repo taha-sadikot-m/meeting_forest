@@ -151,8 +151,17 @@ serve({
         if (pw.length < 8)
           return json({ error: "Password must be at least 8 characters" }, 400);
         // Check email not already used
-        const existing = await runQuery("MATCH (u:User {email: $email}) RETURN u.id AS id", { email });
-        if (existing.length) return json({ error: "An account with this email already exists" }, 409);
+        const existing = await runQuery(
+          "MATCH (u:User {email: $email}) RETURN u.emailVerified AS ev", { email }
+        );
+        if (existing.length) {
+          const verified = existing[0].get("ev");
+          if (!verified) {
+            // Registered but never verified — signal the frontend to offer resend
+            return json({ error: "This email is registered but not yet verified.", unverified: true }, 409);
+          }
+          return json({ error: "An account with this email already exists" }, 409);
+        }
         const id          = "user-" + Date.now().toString(36);
         const passwordHash = await hashPassword(pw);
         const verifyToken  = generateSecureToken();
@@ -163,6 +172,32 @@ serve({
           { id, name, email, passwordHash, verifyToken, now }
         );
         await sendVerificationEmail(email, name, verifyToken);
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // POST /api/auth/resend-verification
+    if (path === "/api/auth/resend-verification" && req.method === "POST") {
+      try {
+        const b     = await req.json() as { email?: string };
+        const email = (b.email || "").trim().toLowerCase();
+        if (email) {
+          const recs = await runQuery(
+            "MATCH (u:User {email: $email}) RETURN u.name AS name, u.emailVerified AS ev",
+            { email }
+          );
+          // Only resend if account exists and is still unverified
+          if (recs.length && !recs[0].get("ev")) {
+            const name        = recs[0].get("name") as string;
+            const verifyToken = generateSecureToken();
+            await runQuery(
+              "MATCH (u:User {email: $email}) SET u.verifyToken = $verifyToken",
+              { email, verifyToken }
+            );
+            await sendVerificationEmail(email, name, verifyToken);
+          }
+        }
+        // Always respond OK — no enumeration
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
     }

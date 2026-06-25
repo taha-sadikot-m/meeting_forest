@@ -79,11 +79,28 @@ export function registerPage(): string {
       </button>
     </form>
 
-    <!-- Success state -->
+    <!-- Success state (after registration) -->
     <div class="success-state" id="successState">
       <div class="success-icon">✉</div>
       <h2 class="success-title">Check your email</h2>
       <p class="success-msg" id="successMsg">We've sent a verification link to your email. Click it to activate your account.</p>
+    </div>
+
+    <!-- Unverified state (email exists but not verified) -->
+    <div class="success-state" id="unverifiedState" style="display:none">
+      <div class="success-icon" style="background:linear-gradient(135deg,#F59E0B,#D97706)">⚠</div>
+      <h2 class="success-title">Email not verified</h2>
+      <p class="success-msg">This email is already registered but hasn't been verified yet. Resend the verification link?</p>
+      <button class="btn-auth" id="resendBtn" onclick="resendVerification()" style="margin-top:16px">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+          <polyline points="22,6 12,13 2,6"/>
+        </svg>
+        Resend Verification Email
+      </button>
+      <p style="margin-top:14px;font-size:13px;color:#6B7280">
+        Already verified? <a href="/login" style="color:#D15000;font-weight:600">Sign in</a>
+      </p>
     </div>
 
     <p class="auth-footer">
@@ -94,6 +111,8 @@ export function registerPage(): string {
 </div>
 
 <script>
+  let _pendingEmail = '';
+
   function togglePw(id, btn) {
     const inp = document.getElementById(id);
     const isText = inp.type === 'text';
@@ -125,6 +144,32 @@ export function registerPage(): string {
     document.getElementById('errorAlert').classList.add('show');
   }
 
+  function showUnverified(email) {
+    _pendingEmail = email;
+    document.getElementById('registerForm').style.display = 'none';
+    document.getElementById('errorAlert').classList.remove('show');
+    document.getElementById('unverifiedState').style.display = 'flex';
+    document.getElementById('unverifiedState').classList.add('show');
+  }
+
+  async function resendVerification() {
+    const btn = document.getElementById('resendBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _pendingEmail }),
+      });
+    } catch {}
+    // Always show success (prevent enumeration)
+    document.getElementById('unverifiedState').style.display = 'none';
+    document.getElementById('successMsg').textContent =
+      'We resent the verification link to ' + _pendingEmail + '. Check your inbox.';
+    document.getElementById('successState').classList.add('show');
+  }
+
   async function handleRegister(e) {
     e.preventDefault();
     document.getElementById('errorAlert').classList.remove('show');
@@ -144,8 +189,12 @@ export function registerPage(): string {
       });
       const data = await res.json();
       if (!res.ok) {
-        showError(data.error || 'Registration failed');
-        btn.disabled = false; btn.textContent = 'Create Account';
+        if (data.unverified) {
+          showUnverified(email);
+        } else {
+          showError(data.error || 'Registration failed');
+          btn.disabled = false; btn.textContent = 'Create Account';
+        }
         return;
       }
       document.getElementById('registerForm').style.display = 'none';
