@@ -20,16 +20,21 @@ export function homePage(user: { name: string; email: string }): string {
   </script>
   <style>
     .page-header { margin-bottom: 28px; }
-    .page-header h1 {
-      font-size: 28px; font-weight: 800; color: var(--foreground);
-      letter-spacing: -.5px; margin-bottom: 6px;
+    .page-header h1 { font-size: 28px; font-weight: 800; color: var(--foreground); letter-spacing: -.5px; margin-bottom: 6px; }
+    .page-header p  { font-size: 14px; color: var(--muted-fg); }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
+    @media(max-width:720px){ .stats-row { grid-template-columns: 1fr 1fr; } }
+    .stat-card {
+      background: white; border: 1.5px solid var(--border); border-radius: var(--r-xl);
+      padding: 20px 22px; display: flex; flex-direction: column; gap: 6px;
     }
-    .page-header p { font-size: 14px; color: var(--muted-fg); }
+    .stat-card .stat-val { font-size: 28px; font-weight: 800; color: var(--foreground); }
+    .stat-card .stat-label { font-size: 12px; font-weight: 600; color: var(--muted-fg); text-transform: uppercase; letter-spacing: .4px; }
 
     /* Quick actions */
-    .quick-actions {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px;
-    }
+    .quick-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
     @media(max-width:720px){ .quick-actions { grid-template-columns: 1fr; } }
 
     .action-card {
@@ -38,19 +43,12 @@ export function homePage(user: { name: string; email: string }): string {
       transition: all .25s cubic-bezier(.34,1.56,.64,1);
     }
     .action-card:hover { box-shadow: var(--shadow-md); transform: translateY(-3px); border-color: rgba(209,80,0,.25); }
-    .action-card.primary-card {
-      background: linear-gradient(135deg, #D15000 0%, #ff7b2e 100%);
-      border-color: transparent;
-    }
-    .action-card.primary-card h3,
-    .action-card.primary-card p { color: white; }
+    .action-card.primary-card { background: linear-gradient(135deg, #D15000 0%, #ff7b2e 100%); border-color: transparent; }
+    .action-card.primary-card h3, .action-card.primary-card p { color: white; }
     .action-card.primary-card p { opacity: .85; }
     .action-card h3 { font-size: 18px; font-weight: 700; color: var(--foreground); }
     .action-card p  { font-size: 13px; color: var(--muted-fg); line-height: 1.6; }
-    .action-icon {
-      width: 44px; height: 44px; border-radius: var(--r-lg);
-      display: flex; align-items: center; justify-content: center;
-    }
+    .action-icon { width: 44px; height: 44px; border-radius: var(--r-lg); display: flex; align-items: center; justify-content: center; }
     .action-icon.orange { background: rgba(255,255,255,.2); }
     .action-icon.white  { background: var(--primary-light); }
 
@@ -59,10 +57,7 @@ export function homePage(user: { name: string; email: string }): string {
     .join-row .form-input { flex: 1; }
 
     /* Active rooms */
-    .section-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px;
-    }
+    .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .section-header h2 { font-size: 18px; font-weight: 700; color: var(--foreground); }
 
     .active-room-row {
@@ -82,39 +77,21 @@ export function homePage(user: { name: string; email: string }): string {
       50%      { box-shadow: 0 0 0 6px rgba(16,185,129,.06); }
     }
     .room-info { flex: 1; min-width: 0; }
-    .room-name {
-      font-size: 14px; font-weight: 700; color: var(--foreground);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
+    .room-name { font-size: 14px; font-weight: 700; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .room-meta { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
 
-    /* Recent meetings */
-    .history-badge {
-      font-size: 10px; font-weight: 700; text-transform: uppercase;
-      padding: 2px 8px; border-radius: var(--r-full); letter-spacing: .4px;
-    }
-    .badge-ended    { background: var(--accent); color: var(--muted-fg); }
-    .badge-recorded { background: #EFF6FF; color: #1D4ED8; }
-
     /* Modal */
-    .modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,.45); z-index: 1000;
-      align-items: center; justify-content: center;
-    }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; align-items: center; justify-content: center; }
     .modal-overlay.open { display: flex; }
-    .modal {
-      background: white; border-radius: var(--r-xl); padding: 32px;
-      width: min(500px,90vw); box-shadow: 0 20px 60px rgba(0,0,0,.2);
-      animation: modalIn .3s cubic-bezier(.34,1.56,.64,1);
-    }
-    @keyframes modalIn {
-      from { opacity:0; transform:scale(.92) translateY(16px); }
-      to   { opacity:1; transform:scale(1) translateY(0); }
-    }
+    .modal { background: white; border-radius: var(--r-xl); padding: 32px; width: min(500px,90vw); box-shadow: 0 20px 60px rgba(0,0,0,.2); animation: modalIn .3s cubic-bezier(.34,1.56,.64,1); }
+    @keyframes modalIn { from { opacity:0; transform:scale(.92) translateY(16px); } to { opacity:1; transform:scale(1) translateY(0); } }
     .modal h3 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
     .modal p  { font-size: 13px; color: var(--muted-fg); margin-bottom: 20px; }
     .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    .empty-state { text-align: center; padding: 40px 24px; color: var(--muted-fg); font-size: 13px; }
+    .empty-state svg { opacity: .3; margin-bottom: 12px; }
+    .empty-state p { margin: 0; }
   </style>
 </head>
 <body>
@@ -134,15 +111,12 @@ export function homePage(user: { name: string; email: string }): string {
       </div>
     </a>
     <button class="sb-close-btn" onclick="toggleCollapseSidebar()" title="Collapse sidebar">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="m15 18-6-6 6-6"/>
-      </svg>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
     </button>
   </div>
 
   <nav class="sb-nav">
     <div class="sb-section-label">Navigation</div>
-
     <a href="/" class="sb-link active" title="Dashboard">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
@@ -150,19 +124,24 @@ export function homePage(user: { name: string; email: string }): string {
       </svg>
       <span>Dashboard</span>
     </a>
-
     <a href="#new" class="sb-link" title="New Meeting" onclick="event.preventDefault();openStartModal()">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
       </svg>
       <span>New Meeting</span>
     </a>
-
-    <a href="#meetings" class="sb-link" title="Past Meetings">
+    <a href="/meetings/past" class="sb-link" title="Past Meetings">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
       </svg>
       <span>Past Meetings</span>
+    </a>
+    <a href="/meetings/invitations" class="sb-link" title="Invitations" id="sidebarInviteLink">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+        <polyline points="22,6 12,13 2,6"/>
+      </svg>
+      <span>Invitations</span>
     </a>
   </nav>
 
@@ -171,7 +150,7 @@ export function homePage(user: { name: string; email: string }): string {
       <div class="sb-user-avatar">${initial}</div>
       <div class="sb-user-info">
         <div class="sb-user-name">${safeName}</div>
-        <div class="sb-user-role">Super Admin</div>
+        <div class="sb-user-role">${safeEmail}</div>
       </div>
     </div>
     <a href="/logout" class="sb-logout" title="Logout">
@@ -200,7 +179,23 @@ export function homePage(user: { name: string; email: string }): string {
 
   <div class="page-header">
     <h1>${greeting}, ${firstName} 👋</h1>
-    <p>Welcome back — start or join a meeting below</p>
+    <p>Welcome back — here's your meeting overview</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card">
+      <div class="stat-val" id="statTotal">—</div>
+      <div class="stat-label">Total Meetings</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statActive">—</div>
+      <div class="stat-label">Live Now</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="statInvites">—</div>
+      <div class="stat-label">Invitations</div>
+    </div>
   </div>
 
   <!-- Quick actions: Start + Join -->
@@ -243,26 +238,17 @@ export function homePage(user: { name: string; email: string }): string {
     </div>
   </div>
 
-  <!-- Active Rooms -->
+  <!-- Live Rooms -->
   <div class="section-header">
     <h2>🟢 Live Rooms</h2>
     <button class="btn btn-ghost btn-sm" onclick="loadRooms()">Refresh</button>
   </div>
-  <div id="activeRooms" style="margin-bottom:32px">
-    <div id="roomsLoading" style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">
-      Loading meetings…
-    </div>
+  <div id="activeRooms" style="margin-bottom:16px">
+    <div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">Loading…</div>
   </div>
-
-  <!-- Recent meetings -->
-  <div class="section-header" id="meetings">
-    <h2>All Meetings</h2>
-  </div>
-  <div id="allMeetingsGrid" class="meeting-grid" style="margin-top:0">
-    <div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px;grid-column:1/-1">
-      Loading…
-    </div>
-  </div>
+  <p style="font-size:13px;color:var(--muted-fg);margin-bottom:0">
+    <a href="/meetings/past" style="color:var(--primary);font-weight:600;text-decoration:none">View past meetings →</a>
+  </p>
 
 </div><!-- /page -->
 </div><!-- /app-body -->
@@ -277,7 +263,7 @@ export function homePage(user: { name: string; email: string }): string {
       <input class="form-input" id="newRoomName" placeholder="e.g. Product Kickoff Q3" />
     </div>
     <div class="form-group">
-      <label class="form-label">Your Name</label>
+      <label class="form-label">Your Display Name</label>
       <input class="form-input" id="newUserName" placeholder="e.g. Taha Sadikot" value="${safeName}" />
     </div>
     <div class="modal-footer">
@@ -292,7 +278,6 @@ export function homePage(user: { name: string; email: string }): string {
   </div>
 </div>
 
-<!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -312,36 +297,30 @@ export function homePage(user: { name: string; email: string }): string {
     document.getElementById('newRoomName').value = '';
     document.getElementById('newRoomName').focus();
   }
-  function closeStartModal() {
-    document.getElementById('startModal').classList.remove('open');
-  }
+  function closeStartModal() { document.getElementById('startModal').classList.remove('open'); }
   document.getElementById('startModal').addEventListener('click', e => {
     if (e.target === document.getElementById('startModal')) closeStartModal();
   });
 
   function joinRoomById(roomId) {
-    const name = document.getElementById('joinNameInput').value.trim()
-                 || prompt('Enter your display name:');
-    if (name) window.location.href = '/room/' + roomId + '?name=' + encodeURIComponent(name);
+    window.location.href = '/room/' + encodeURIComponent(roomId);
   }
   function joinRoom() {
-    const room = document.getElementById('joinRoomInput').value.trim();
-    const name = document.getElementById('joinNameInput').value.trim();
+    let room = document.getElementById('joinRoomInput').value.trim();
     if (!room) return showToast('Please enter a room ID', 'error');
-    if (!name) return showToast('Please enter your name', 'error');
-    window.location.href = '/room/' + room + '?name=' + encodeURIComponent(name);
+    // If a full URL is pasted, extract just the room ID portion
+    if (room.includes('/room/')) {
+      room = room.split('/room/')[1].split('?')[0].split('#')[0];
+    }
+    window.location.href = '/room/' + encodeURIComponent(room);
   }
 
-  /** Create meeting in Memgraph then redirect as Super Admin */
   async function startMeeting() {
     const rawName  = document.getElementById('newRoomName').value.trim();
-    const userName = document.getElementById('newUserName').value.trim() || 'Host';
+    const userName = document.getElementById('newUserName').value.trim() || ${JSON.stringify(safeName)};
     if (!rawName) return showToast('Please enter a meeting name', 'error');
-
     const btn = document.querySelector('#startModal .btn-primary');
-    btn.disabled = true;
-    btn.textContent = 'Creating…';
-
+    btn.disabled = true; btn.textContent = 'Creating…';
     try {
       const res = await fetch('/api/meetings', {
         method: 'POST',
@@ -351,8 +330,8 @@ export function homePage(user: { name: string; email: string }): string {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error');
       closeStartModal();
-      window.location.href = '/room/' + encodeURIComponent(data.id) +
-        '?role=superadmin&name=' + encodeURIComponent(userName);
+      // Server will detect creator via email and inject superadmin role
+      window.location.href = '/room/' + encodeURIComponent(data.id);
     } catch (err) {
       showToast('Could not create meeting: ' + err.message, 'error');
       btn.disabled = false;
@@ -374,14 +353,13 @@ export function homePage(user: { name: string; email: string }): string {
   async function copyRoomLink(roomId, btn) {
     const link = window.location.origin + '/room/' + roomId;
     try { await navigator.clipboard.writeText(link); }
-    catch {
+    catch (e) {
       const ta = Object.assign(document.createElement('textarea'), { value: link });
       ta.style.cssText = 'position:fixed;opacity:0';
       document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
     }
     const prev = btn.innerHTML;
-    btn.innerHTML = '✓ Copied!';
-    btn.style.color = '#059669';
+    btn.innerHTML = '✓ Copied!'; btn.style.color = '#059669';
     showToast('Room link copied', 'success');
     setTimeout(() => { btn.innerHTML = prev; btn.style.color = ''; }, 2000);
   }
@@ -401,7 +379,10 @@ export function homePage(user: { name: string; email: string }): string {
     row.className = 'active-room-row';
     const p = m.participants || 0;
     const initials = (m.adminName || '?')[0].toUpperCase();
-    row.innerHTML =
+
+    // Build static parts via innerHTML (no user data embedded in event handlers)
+    const infoWrap = document.createElement('div');
+    infoWrap.innerHTML =
       '<div class="room-indicator"></div>' +
       '<div class="room-info">' +
         '<div class="room-name">' + m.label + '</div>' +
@@ -409,71 +390,62 @@ export function homePage(user: { name: string; email: string }): string {
           ' · Admin: ' + (m.adminName || 'Unknown') +
           ' · ' + relativeTime(m.createdAt) + '</div>' +
       '</div>' +
-      '<div class="avatar-stack"><div class="avatar">' + initials + '</div></div>' +
-      '<button class="btn btn-ghost btn-sm" style="gap:5px" onclick="copyRoomLink(' + JSON.stringify(m.id) + ', this)">' +
-        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">' +
-          '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
-        '</svg>Link</button>' +
-      '<button class="btn btn-primary btn-sm" onclick="joinRoomById(' + JSON.stringify(m.id) + ')">Join</button>';
-    return row;
-  }
+      '<div class="avatar-stack"><div class="avatar">' + initials + '</div></div>';
+    while (infoWrap.firstChild) row.appendChild(infoWrap.firstChild);
 
-  function renderMeetingCard(m) {
-    const card = document.createElement('div');
-    card.className = 'meeting-card';
-    card.style.cursor = 'pointer';
-    const p = m.participants || 0;
-    const initials = (m.adminName || '?')[0].toUpperCase();
-    const dateStr = new Date(m.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-                    ' · ' + new Date(m.createdAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    card.innerHTML =
-      '<div style="display:flex;align-items:start;justify-content:space-between">' +
-        '<div class="meeting-card-title">' + m.label + '</div>' +
-        '<span class="history-badge badge-ended">' + (m.status || 'active') + '</span>' +
-      '</div>' +
-      '<div class="meeting-card-meta">' +
-        '<span class="tag">' + p + ' participant' + (p !== 1 ? 's' : '') + '</span>' +
-        '<span class="tag">Admin: ' + (m.adminName || 'Unknown') + '</span>' +
-      '</div>' +
-      '<div style="font-size:12px;color:var(--muted-fg)">' + dateStr + '</div>' +
-      '<div class="meeting-card-footer">' +
-        '<div class="avatar-stack"><div class="avatar">' + initials + '</div></div>' +
-        '<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();joinRoomById(' + JSON.stringify(m.id) + ')">Join</button>' +
-      '</div>';
-    card.addEventListener('click', () => joinRoomById(m.id));
-    return card;
+    // Buttons use addEventListener to safely pass the room ID
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-ghost btn-sm';
+    copyBtn.style.gap = '5px';
+    copyBtn.innerHTML =
+      '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">' +
+        '<rect x="9" y="9" width="13" height="13" rx="2"/>' +
+        '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>' +
+      '</svg>Link';
+    copyBtn.addEventListener('click', function() { copyRoomLink(m.id, this); });
+
+    const joinBtn = document.createElement('button');
+    joinBtn.className = 'btn btn-primary btn-sm';
+    joinBtn.textContent = 'Join';
+    joinBtn.addEventListener('click', function() { joinRoomById(m.id); });
+
+    row.appendChild(copyBtn);
+    row.appendChild(joinBtn);
+    return row;
   }
 
   async function loadRooms() {
     const container = document.getElementById('activeRooms');
-    const grid = document.getElementById('allMeetingsGrid');
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">Loading…</div>';
     try {
       const res = await fetch('/api/meetings');
       if (!res.ok) throw new Error('status ' + res.status);
       const meetings = await res.json();
+      const active = meetings.filter(m => m.status === 'active');
 
-      // Live rooms section
+      // Update stats
+      document.getElementById('statTotal').textContent = meetings.length;
+      document.getElementById('statActive').textContent = active.length;
+
+      // Load invitation count separately
+      fetch('/api/meetings/invitations').then(r => r.ok ? r.json() : []).then(inv => {
+        document.getElementById('statInvites').textContent = Array.isArray(inv) ? inv.length : 0;
+      }).catch(() => { document.getElementById('statInvites').textContent = '0'; });
+
       container.innerHTML = '';
-      if (!meetings.length) {
-        container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">No active meetings — start one above!</div>';
+      if (!active.length) {
+        container.innerHTML = '<div class="empty-state">' +
+          '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto">' +
+          '<path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>' +
+          '</svg><p style="margin-top:8px">No active meetings — start one above!</p></div>';
       } else {
-        meetings.forEach(m => container.appendChild(renderRoomRow(m)));
-      }
-
-      // All meetings grid
-      grid.innerHTML = '';
-      if (!meetings.length) {
-        grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px;grid-column:1/-1">No meetings yet</div>';
-      } else {
-        meetings.forEach(m => grid.appendChild(renderMeetingCard(m)));
+        active.forEach(m => container.appendChild(renderRoomRow(m)));
       }
     } catch (err) {
-      container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">Could not load meetings — is Memgraph running?</div>';
-      grid.innerHTML = '';
+      container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted-fg);font-size:13px">Could not load meetings — is the server running?</div>';
     }
   }
 
-  // Load on page open
   loadRooms();
 </script>
 </body>

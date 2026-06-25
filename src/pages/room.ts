@@ -1,6 +1,9 @@
-export function roomPage(roomId: string, user?: { name: string; email: string }): string {
-  const safeRoomId  = roomId || 'my-room';
-  const prefillName = (user?.name || "").replace(/`/g, "'").replace(/"/g, "&quot;");
+export function roomPage(roomId: string, user?: { name: string; email: string }, serverRole?: string): string {
+  const safeRoomId   = roomId || 'my-room';
+  const prefillName  = (user?.name || "").replace(/`/g, "'").replace(/"/g, "&quot;");
+  // Sanitize server-injected role (only allow known role strings)
+  const allowedRoles = ['superadmin', 'admin', 'participant'];
+  const injectedRole = allowedRoles.includes(serverRole || '') ? (serverRole as string) : '';
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -668,13 +671,16 @@ export function roomPage(roomId: string, user?: { name: string; email: string })
   const ROOM_ID   = '${safeRoomId}';
   const urlParams = new URLSearchParams(location.search);
   let userName    = urlParams.get('name') || '${prefillName}';
-  const userRole  = urlParams.get('role') || 'participant'; // 'superadmin' | 'admin' | 'participant'
+  // Server-injected role takes precedence (set when server verifies user is meeting creator)
+  const _serverRole = '${injectedRole}';
+  const userRole  = _serverRole || urlParams.get('role') || 'participant'; // 'superadmin' | 'admin' | 'participant'
   const isAdmin   = userRole === 'superadmin' || userRole === 'admin';
   const treeRoot  = urlParams.get('treeRoot') || ROOM_ID;
   const viewAsId  = urlParams.get('viewAs')   || (userRole === 'admin' ? ROOM_ID : null);
 
   let livekitRoom = null;
   let activeRoomId = ROOM_ID;   // tracks which sub-meeting the user is currently in
+  let _roomSwitching = false;   // true while intentionally switching rooms (suppresses Disconnected redirect)
   let micEnabled = true, camEnabled = true, sharing = false;
   let panelOpen = false, currentPanel = 'chat';
   let localStream = null, lobbyStream = null;
@@ -817,8 +823,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string })
     }).catch(() => {});
 
     // 2. Disconnect from current LiveKit room
+    _roomSwitching = true;
     if (livekitRoom) {
-      try { await livekitRoom.disconnect(); } catch { /* ignore */ }
+      try { await livekitRoom.disconnect(); } catch (e) { /* ignore */ }
       livekitRoom = null;
     }
 
@@ -858,6 +865,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string })
 
     // 6. Connect to new LiveKit room
     showToast('Switching to ' + nodeId + '…', 'info');
+    _roomSwitching = false;
     await connectToLiveKit();
     updateTreeBadge();
   };
@@ -1143,6 +1151,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string })
         .on(RoomEvent.ActiveSpeakersChanged, speakers => { updateSpeakers(speakers); })
         .on(RoomEvent.DataReceived, (data) => { handleDataMessage(data); })
         .on(RoomEvent.Disconnected, () => {
+          if (_roomSwitching) return; // intentional switch — don't redirect
           showToast('Disconnected from room', 'error');
           setTimeout(() => window.location.href = '/', 2000);
         });

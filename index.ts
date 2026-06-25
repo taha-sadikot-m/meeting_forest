@@ -5,6 +5,8 @@ import { AccessToken } from "livekit-server-sdk";
 import neo4j from "neo4j-driver";
 import { homePage } from "./src/pages/home";
 import { roomPage } from "./src/pages/room";
+import { pastMeetingsPage } from "./src/pages/past-meetings";
+import { invitationsPage } from "./src/pages/invitations";
 import { loginPage } from "./src/pages/login";
 import { registerPage } from "./src/pages/register";
 import { forgotPasswordPage } from "./src/pages/forgot-password";
@@ -294,10 +296,29 @@ serve({
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(homePage({ name: session.name, email: session.email }));
     }
+    if (path === "/meetings/past") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(pastMeetingsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/meetings/invitations") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(invitationsPage({ name: session.name, email: session.email }));
+    }
     if (path === "/room" || path.startsWith("/room/")) {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(req.url));
       const roomId = path.replace(/^\/room\/?/, "") || "";
-      return html(roomPage(roomId, { name: session.name, email: session.email }));
+      // Check if the logged-in user is the original creator of this root meeting
+      let serverRole: string | undefined;
+      if (roomId) {
+        try {
+          const cr = await runQuery(
+            "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $roomId}) RETURN u.email AS e",
+            { email: session.email, roomId }
+          );
+          if (cr.length > 0) serverRole = "superadmin";
+        } catch { /* non-critical — fall through */ }
+      }
+      return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole));
     }
 
     // ── Token API (protected) ─────────────────────────────────────────────────
@@ -314,33 +335,40 @@ serve({
     // ── Meeting APIs ──────────────────────────────────────────────────────────
 
     if (path === "/api/meetings" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
       try {
         const b = await req.json() as { label?: string; adminName?: string; micDefault?: string; camDefault?: string };
         const label = (b.label || "").trim();
         if (!label) return json({ error: "label required" }, 400);
-        const admin = (b.adminName || session?.name || "Host").trim();
+        // Use authenticated user's name for display; link by email for ownership tracking
+        const admin = (b.adminName || session.name || "Host").trim();
+        const email = session.email;
         const id    = generateId(label);
         const now   = Date.now();
         await runQuery(
-          "MERGE (u:User {name: $admin}) ON CREATE SET u.createdAt = $now " +
+          "MATCH (u:User {email: $email}) " +
           "CREATE (m:Meeting { id: $id, label: $label, adminName: $admin, status: 'active', " +
           "micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
           "CREATE (u)-[:CREATED {at: $now}]->(m)",
-          { admin, id, label, mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
+          { email, admin, id, label, mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
         );
         return json({ ok: true, id, label });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
     if (path === "/api/meetings" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
       try {
+        // Only return root meetings the logged-in user created or participated in
         const recs = await runQuery(
-          "MATCH (m:Meeting) WHERE NOT ()-[:HAS_CHILD]->(m) " +
-          "OPTIONAL MATCH (u:User)-[r:PARTICIPATES_IN]->(m) WHERE r.leftAt IS NULL " +
-          "WITH m, count(u) AS participants " +
+          "MATCH (u:User {email: $email})-[:CREATED|PARTICIPATES_IN]->(m:Meeting) " +
+          "WHERE NOT ()-[:HAS_CHILD]->(m) " +
+          "OPTIONAL MATCH (p:User)-[r:PARTICIPATES_IN]->(m) WHERE r.leftAt IS NULL " +
+          "WITH m, count(DISTINCT p) AS participants " +
           "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
           "m.status AS status, m.createdAt AS createdAt, participants " +
-          "ORDER BY m.createdAt DESC LIMIT 50"
+          "ORDER BY m.createdAt DESC LIMIT 50",
+          { email: session.email }
         );
         return json(recs.map(r => ({
           id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
@@ -349,23 +377,73 @@ serve({
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
+    // GET /api/meetings/past — meetings the user has participated in
+    if (path === "/api/meetings/past" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const recs = await runQuery(
+          "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting) " +
+          "WHERE NOT ()-[:HAS_CHILD]->(m) " +
+          "WITH m, r ORDER BY m.createdAt DESC " +
+          "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
+          "m.status AS status, m.createdAt AS createdAt, " +
+          "r.joinedAt AS joinedAt, r.leftAt AS leftAt, r.role AS role " +
+          "LIMIT 100",
+          { email: session.email }
+        );
+        return json(recs.map(r => ({
+          id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
+          status: r.get("status"), createdAt: r.get("createdAt"),
+          joinedAt: r.get("joinedAt"), leftAt: r.get("leftAt"), role: r.get("role"),
+        })));
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // GET /api/meetings/invitations — meetings the user was invited to
+    if (path === "/api/meetings/invitations" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const recs = await runQuery(
+          "MATCH (u:User {email: $email})-[r:INVITED_TO]->(m:Meeting) " +
+          "WHERE NOT ()-[:HAS_CHILD]->(m) " +
+          "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
+          "m.status AS status, m.createdAt AS createdAt, " +
+          "r.by AS invitedBy, r.at AS invitedAt " +
+          "ORDER BY r.at DESC LIMIT 50",
+          { email: session.email }
+        );
+        return json(recs.map(r => ({
+          id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
+          status: r.get("status"), createdAt: r.get("createdAt"),
+          invitedBy: r.get("invitedBy"), invitedAt: r.get("invitedAt"),
+        })));
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
     const joinMatch = path.match(/^\/api\/meetings\/([^/]+)\/join$/);
     if (joinMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
       const mid = decodeURIComponent(joinMatch[1]);
       try {
         const b    = await req.json() as { name?: string; role?: string };
-        const name = (b.name || "").trim();
+        const name = (b.name || session.name || "").trim();
         if (!name) return json({ error: "name required" }, 400);
         const now  = Date.now();
+        // If user is the original creator of this meeting, always assign superadmin
+        const creatorCheck = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) RETURN u.email AS e",
+          { email: session.email, mid }
+        );
+        const role = creatorCheck.length > 0 ? "superadmin" : (b.role || "participant");
         await runQuery(
-          "MERGE (u:User {name: $name}) ON CREATE SET u.createdAt = $now " +
+          "MATCH (u:User {email: $email}) " +
           "WITH u MATCH (m:Meeting {id: $mid}) " +
           "MERGE (u)-[r:PARTICIPATES_IN]->(m) " +
           "ON CREATE SET r.role = $role, r.joinedAt = $now, r.leftAt = null " +
           "ON MATCH  SET r.leftAt = null, r.joinedAt = $now, r.role = $role",
-          { name, mid, role: b.role || "participant", now }
+          { email: session.email, mid, role, now }
         );
-        return json({ ok: true });
+        return json({ ok: true, role });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
@@ -396,6 +474,22 @@ serve({
         if (!email || !email.includes("@")) return json({ error: "valid email required" }, 400);
         const link = `${APP_URL}/room/${encodeURIComponent(mid)}`;
         await sendMeetingInviteEmail(email, inviterName, meetingLabel, link);
+        // If the invited person is a registered user, record invitation in Memgraph
+        try {
+          const invRecs = await runQuery(
+            "MATCH (invited:User {email: $invitedEmail}) RETURN invited.email AS e",
+            { invitedEmail: email }
+          );
+          if (invRecs.length > 0) {
+            await runQuery(
+              "MATCH (invited:User {email: $invitedEmail}), (m:Meeting {id: $mid}) " +
+              "MERGE (invited)-[r:INVITED_TO]->(m) " +
+              "ON CREATE SET r.by = $inviterName, r.at = $now " +
+              "ON MATCH  SET r.by = $inviterName, r.at = $now",
+              { invitedEmail: email, mid, inviterName, now: Date.now() }
+            );
+          }
+        } catch { /* non-critical — email was already sent */ }
         return json({ ok: true });
       } catch (e) {
         console.error("[invite] Failed to send email invite:", e);
