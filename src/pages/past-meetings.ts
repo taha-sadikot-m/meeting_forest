@@ -283,17 +283,30 @@ export function pastMeetingsPage(user: { name: string; email: string }): string 
       const tbody = document.createElement('tbody');
       meetings.forEach(m => {
         const tr = document.createElement('tr');
+        // Build static cells via innerHTML (no room ID embedded in event handlers)
         tr.innerHTML =
           '<td><div style="font-weight:700">' + m.label + '</div>' +
             '<div style="font-size:11px;color:var(--muted-fg);margin-top:2px">Admin: ' + (m.adminName || 'Unknown') + '</div></td>' +
           '<td style="color:var(--muted-fg)">' + formatDate(m.createdAt) + '</td>' +
           '<td>' + roleBadge(m.role) + '</td>' +
           '<td>' + statusBadge(m.status) + '</td>' +
-          '<td style="text-align:right">' +
-            (m.status === 'active'
-              ? '<button class="btn btn-primary btn-sm" onclick="window.location.href=\'/room/\'+' + JSON.stringify(m.id) + '">Rejoin</button>'
-              : '<button class="btn btn-ghost btn-sm" style="opacity:.5" disabled>Ended</button>') +
-          '</td>';
+          '<td style="text-align:right"></td>';
+        // Build action button as DOM element to safely capture the room ID in a closure
+        const actionCell = tr.querySelector('td:last-child');
+        if (m.status === 'active') {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-primary btn-sm';
+          btn.textContent = 'Rejoin';
+          btn.addEventListener('click', function() { window.location.href = '/room/' + m.id; });
+          actionCell.appendChild(btn);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-ghost btn-sm';
+          btn.textContent = 'Ended';
+          btn.style.opacity = '0.5';
+          btn.disabled = true;
+          actionCell.appendChild(btn);
+        }
         tbody.appendChild(tr);
       });
       table.appendChild(tbody);

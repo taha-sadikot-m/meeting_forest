@@ -377,18 +377,22 @@ serve({
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
-    // GET /api/meetings/past — meetings the user has participated in
+    // GET /api/meetings/past — meetings the user created or participated in
     if (path === "/api/meetings/past" && req.method === "GET") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       try {
+        // Match any meeting the user has a relationship with (created OR joined)
+        // Use DISTINCT to avoid duplicates when both CREATED and PARTICIPATES_IN exist
         const recs = await runQuery(
-          "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting) " +
+          "MATCH (u:User {email: $email})-[:CREATED|PARTICIPATES_IN]->(m:Meeting) " +
           "WHERE NOT ()-[:HAS_CHILD]->(m) " +
-          "WITH m, r ORDER BY m.createdAt DESC " +
+          "WITH DISTINCT u, m " +
+          "OPTIONAL MATCH (u)-[rp:PARTICIPATES_IN]->(m) " +
           "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
           "m.status AS status, m.createdAt AS createdAt, " +
-          "r.joinedAt AS joinedAt, r.leftAt AS leftAt, r.role AS role " +
-          "LIMIT 100",
+          "COALESCE(rp.role, 'creator') AS role, " +
+          "rp.joinedAt AS joinedAt, rp.leftAt AS leftAt " +
+          "ORDER BY m.createdAt DESC LIMIT 100",
           { email: session.email }
         );
         return json(recs.map(r => ({

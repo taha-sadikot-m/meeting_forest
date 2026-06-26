@@ -266,6 +266,7 @@ export function invitationsPage(user: { name: string; email: string }): string {
         const card = document.createElement('div');
         card.className = 'invite-card';
         const isActive = inv.status === 'active';
+        // Build static parts via innerHTML; action button added separately via DOM API
         card.innerHTML =
           '<div class="invite-avatar">' + initial + '</div>' +
           '<div class="invite-info">' +
@@ -278,11 +279,14 @@ export function invitationsPage(user: { name: string; email: string }): string {
                 : '<span class="badge badge-ended">' + (inv.status || 'ended') + '</span>') +
             '</div>' +
           '</div>' +
-          '<div class="invite-actions">' +
-            (isActive
-              ? '<button class="btn btn-primary btn-sm" onclick="window.location.href=\'/room/\'+' + JSON.stringify(inv.id) + '">Join Meeting</button>'
-              : '<button class="btn btn-ghost btn-sm" onclick="window.location.href=\'/room/\'+' + JSON.stringify(inv.id) + '">View Room</button>') +
-          '</div>';
+          '<div class="invite-actions"></div>';
+        // Action button built as DOM element to safely capture inv.id in a closure
+        const actionsDiv = card.querySelector('.invite-actions');
+        const actionBtn = document.createElement('button');
+        actionBtn.className = isActive ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+        actionBtn.textContent = isActive ? 'Join Meeting' : 'View Room';
+        actionBtn.addEventListener('click', function() { window.location.href = '/room/' + inv.id; });
+        actionsDiv.appendChild(actionBtn);
         content.appendChild(card);
       });
     } catch (err) {

@@ -94,6 +94,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   <!-- Video grid -->
   <div class="video-area" id="videoArea">
+
+    <!-- Remote screen share display — hidden until someone shares their screen -->
+    <div id="remoteScreenArea" style="display:none;flex:1;min-height:0;position:relative;background:#111;border-radius:12px;overflow:hidden;margin-bottom:8px">
+      <video id="remoteScreenVideo" autoplay playsinline style="width:100%;height:100%;object-fit:contain;display:block"></video>
+      <div id="remoteScreenLabel" style="position:absolute;top:10px;left:12px;background:rgba(0,0,0,.65);color:#fff;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;pointer-events:none"></div>
+    </div>
+
     <div class="video-grid" id="videoGrid">
 
       <!-- Self tile -->
@@ -1136,7 +1143,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           handleRemoteTrack(track, participant);
         })
         .on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
-          removeRemoteTrack(participant.identity);
+          removeRemoteTrack(track, participant);
         })
         .on(RoomEvent.ParticipantConnected, participant => {
           addParticipantTile(participant);
@@ -1169,11 +1176,45 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   function handleRemoteTrack(track, participant) {
+    // Screen share tracks get their own large display area
+    if (track.source === 'screen_share') {
+      const area  = document.getElementById('remoteScreenArea');
+      const vid   = document.getElementById('remoteScreenVideo');
+      const label = document.getElementById('remoteScreenLabel');
+      track.attach(vid);
+      label.textContent = (participant.name || participant.identity) + ' is sharing their screen';
+      area.style.display = 'flex';
+      area.style.flexDirection = 'column';
+      document.getElementById('videoArea').classList.add('screen-sharing');
+      return;
+    }
+    // Camera / audio track — attach to participant's tile
     const tile = document.getElementById('tile-' + participant.identity) || createParticipantTile(participant);
-    const el = tile.querySelector('video') || tile.querySelector('audio');
-    track.attach(el);
+    if (track.kind === 'audio') {
+      // Audio tracks need their own <audio> element (not the <video> element)
+      let audio = tile.querySelector('audio');
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.autoplay = true;
+        tile.appendChild(audio);
+      }
+      track.attach(audio);
+    } else {
+      const el = tile.querySelector('video') || tile.querySelector('audio');
+      track.attach(el);
+    }
   }
-  function removeRemoteTrack(identity) {
+  function removeRemoteTrack(track, participant) {
+    // If it was a screen share, hide the screen share area
+    if (track && track.source === 'screen_share') {
+      const area = document.getElementById('remoteScreenArea');
+      const vid  = document.getElementById('remoteScreenVideo');
+      area.style.display = 'none';
+      vid.srcObject = null;
+      document.getElementById('videoArea').classList.remove('screen-sharing');
+      return;
+    }
+    const identity = participant ? participant.identity : track;
     const tile = document.getElementById('tile-' + identity);
     if (tile) tile.querySelectorAll('video,audio').forEach(el => { el.srcObject = null; });
   }
@@ -1281,24 +1322,36 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
   async function toggleScreenShare() {
     if (!sharing) {
+      if (!livekitRoom) { showToast('Not connected to room', 'error'); return; }
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        document.getElementById('screenVideo').srcObject = stream;
-        document.getElementById('screenShareOverlay').style.display = 'flex';
-        document.getElementById('shareBtn').classList.add('active');
+        // Let LiveKit call getDisplayMedia internally and publish the track.
+        // Do NOT call getDisplayMedia separately — that causes a double screen-picker.
+        const pub = await livekitRoom.localParticipant.setScreenShareEnabled(true);
+        if (!pub) { showToast('Screen share cancelled', 'info'); return; }
         sharing = true;
-        stream.getVideoTracks()[0].onended = stopScreenShare;
-        if (livekitRoom) livekitRoom.localParticipant.setScreenShareEnabled(true);
+        document.getElementById('shareBtn').classList.add('active');
+        document.getElementById('screenShareOverlay').style.display = 'flex';
+        // Mirror LiveKit's captured track into local preview (no second capture needed)
+        if (pub.track && pub.track.mediaStreamTrack) {
+          document.getElementById('screenVideo').srcObject = new MediaStream([pub.track.mediaStreamTrack]);
+          // Auto-stop when user clicks the browser's native "Stop sharing" button
+          pub.track.mediaStreamTrack.onended = stopScreenShare;
+        }
         showToast('Screen sharing started', 'success');
-      } catch (e) { showToast('Screen share cancelled', 'info'); }
+      } catch (e) {
+        sharing = false;
+        document.getElementById('shareBtn').classList.remove('active');
+        document.getElementById('screenShareOverlay').style.display = 'none';
+        showToast('Screen share cancelled', 'info');
+      }
     } else { stopScreenShare(); }
   }
   function stopScreenShare() {
-    const vid = document.getElementById('screenVideo');
-    if (vid.srcObject) vid.srcObject.getTracks().forEach(t => t.stop());
-    document.getElementById('screenShareOverlay').style.display = 'none';
-    document.getElementById('shareBtn').classList.remove('active');
     sharing = false;
+    document.getElementById('shareBtn').classList.remove('active');
+    document.getElementById('screenShareOverlay').style.display = 'none';
+    const vid = document.getElementById('screenVideo');
+    if (vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); vid.srcObject = null; }
     if (livekitRoom) livekitRoom.localParticipant.setScreenShareEnabled(false);
     showToast('Screen sharing stopped');
   }
