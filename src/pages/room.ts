@@ -963,7 +963,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         });
         updateTreeBadge();
       }
-    } catch {
+    } catch (e) {
       // Demo / offline mode — generate a local ID so the invite can still be sent
       if (window._treeCanvas) {
         nodeId = name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
@@ -988,7 +988,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           destinationIdentities: [moveIdentity]
         });
         showToast(adminName + ' is being moved to "' + name + '"', 'success');
-      } catch {
+      } catch (e) {
         showToast('Sub-meeting created — could not notify ' + adminName, 'info');
       }
     } else if (inviteEmail) {
@@ -1017,16 +1017,18 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     document.getElementById('smmAdminEmail') && (document.getElementById('smmAdminEmail').value = '');
   }
 
-  // ── Handle incoming LiveKit data messages (chat + move_to_submeeting) ──────
+  // ── Handle incoming LiveKit data messages ────────────────────────────────
   function handleDataMessage(data) {
     try {
       const msg = JSON.parse(new TextDecoder().decode(data));
       if (msg.type === 'chat') {
         appendChatMessage(msg.name || 'Unknown', msg.msg);
+      } else if (msg.type === 'reaction') {
+        showReactionOverlay(msg.emoji);
       } else if (msg.type === 'move_to_submeeting') {
         showMoveToSubmeeting(msg.nodeId, msg.nodeLabel, msg.role);
       }
-    } catch { /* ignore malformed */ }
+    } catch (e) { /* ignore malformed */ }
   }
 
   // Banner overlay shown to participant being moved
@@ -1288,7 +1290,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         stream.getVideoTracks()[0].onended = stopScreenShare;
         if (livekitRoom) livekitRoom.localParticipant.setScreenShareEnabled(true);
         showToast('Screen sharing started', 'success');
-      } catch { showToast('Screen share cancelled', 'info'); }
+      } catch (e) { showToast('Screen share cancelled', 'info'); }
     } else { stopScreenShare(); }
   }
   function stopScreenShare() {
@@ -1363,20 +1365,69 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // Render a chat message received from another participant
+  function appendChatMessage(name, msg) {
+    const container = document.getElementById('chatMessages');
+    const now = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+    const initial = (name || '?')[0].toUpperCase();
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    const meta = document.createElement('div');
+    meta.className = 'chat-msg-meta';
+    const avatarSpan = document.createElement('span');
+    avatarSpan.className = 'chat-avatar';
+    avatarSpan.textContent = initial;
+    const senderSpan = document.createElement('span');
+    senderSpan.className = 'chat-sender';
+    senderSpan.textContent = escapeHtml(name);
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'chat-time';
+    timeSpan.textContent = now;
+    meta.appendChild(avatarSpan);
+    meta.appendChild(senderSpan);
+    meta.appendChild(timeSpan);
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = msg;
+    div.appendChild(meta);
+    div.appendChild(bubble);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    // Show unread badge if chat panel is not open
+    if (!panelOpen || currentPanel !== 'chat') {
+      const notif = document.getElementById('chatNotif');
+      if (notif) notif.style.display = 'flex';
+    }
+  }
+
   // ── Reactions ─────────────────────────────────────────────────────────────
   function toggleReactions() {
     const p = document.getElementById('reactionsPicker');
     p.style.display = p.style.display === 'none' ? 'flex' : 'none';
   }
-  function sendReaction(emoji) {
-    document.getElementById('reactionsPicker').style.display = 'none';
+
+  // Show floating emoji on screen (local display — called both locally and on receive)
+  function showReactionOverlay(emoji) {
     const overlay = document.getElementById('reactionOverlay');
     const el = document.createElement('div');
     el.className = 'floating-reaction';
     el.textContent = emoji;
-    el.style.left = (20 + Math.random()*60) + '%';
+    el.style.left = (20 + Math.random() * 60) + '%';
     overlay.appendChild(el);
     setTimeout(() => el.remove(), 2500);
+  }
+
+  function sendReaction(emoji) {
+    document.getElementById('reactionsPicker').style.display = 'none';
+    // Show locally immediately
+    showReactionOverlay(emoji);
+    // Broadcast to all other participants via LiveKit data channel
+    if (livekitRoom) {
+      livekitRoom.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify({ type: 'reaction', emoji, name: userName })),
+        { reliable: false }
+      );
+    }
   }
 
   // ── More menu ─────────────────────────────────────────────────────────────
@@ -1410,7 +1461,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   async function copyRoomLink() {
     const link = getRoomLink();
     try { await navigator.clipboard.writeText(link); }
-    catch {
+    catch (e) {
       const ta = document.createElement('textarea');
       ta.value = link; ta.style.position = 'fixed'; ta.style.opacity = '0';
       document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
@@ -1430,7 +1481,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   async function copyLobbyLink(btn) {
     const link = window.location.origin + '/room/' + activeRoomId;
     try { await navigator.clipboard.writeText(link); }
-    catch { const ta = Object.assign(document.createElement('textarea'), { value: link });
+    catch (e) { const ta = Object.assign(document.createElement('textarea'), { value: link });
       ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta);
       ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
     btn.textContent = '✓ Copied!';
@@ -1448,7 +1499,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const link = getRoomLink();
     if (navigator.share) {
       try { await navigator.share({ title: 'Join my meeting: ' + activeRoomId, url: link }); closeInviteModal(); }
-      catch { /* user cancelled */ }
+      catch (e) { /* user cancelled */ }
     } else { copyRoomLink(); }
   }
   function openQrCode() {
