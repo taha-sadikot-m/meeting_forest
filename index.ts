@@ -52,6 +52,25 @@ async function initSchema() {
 }
 initSchema().catch(e => console.warn("[memgraph] Schema init:", e.message));
 
+// ── Waiting room (in-memory, private meetings) ────────────────────────────────
+interface WaitingUser {
+  waitingId: string;
+  name:      string;
+  email:     string;
+  knockedAt: number;
+  status:    "waiting" | "admitted" | "rejected" | "entered";
+}
+const waitingRooms = new Map<string, Map<string, WaitingUser>>();
+
+// Auto-clean entries older than 10 minutes every 5 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  waitingRooms.forEach((users, mid) => {
+    users.forEach((u, wid) => { if (u.knockedAt < cutoff) users.delete(wid); });
+    if (users.size === 0) waitingRooms.delete(mid);
+  });
+}, 5 * 60 * 1000);
+
 function generateId(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
     + "-" + Date.now().toString(36);
@@ -307,18 +326,70 @@ serve({
     if (path === "/room" || path.startsWith("/room/")) {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(req.url));
       const roomId = path.replace(/^\/room\/?/, "") || "";
-      // Check if the logged-in user is the original creator of this root meeting
       let serverRole: string | undefined;
+      let meetingPrivacy = "public";
+
       if (roomId) {
+        // 1. Check if user is creator
+        let isCreator = false;
         try {
           const cr = await runQuery(
-            "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $roomId}) RETURN u.email AS e",
+            "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $roomId}) RETURN m.privacy AS privacy",
             { email: session.email, roomId }
           );
-          if (cr.length > 0) serverRole = "superadmin";
-        } catch { /* non-critical — fall through */ }
+          if (cr.length > 0) {
+            serverRole   = "superadmin";
+            isCreator    = true;
+            meetingPrivacy = (cr[0].get("privacy") as string) || "public";
+          }
+        } catch { /* non-critical */ }
+
+        // 2. Non-creator: fetch meeting privacy
+        if (!isCreator && roomId) {
+          try {
+            const mr = await runQuery(
+              "MATCH (m:Meeting {id: $roomId}) RETURN m.privacy AS privacy",
+              { roomId }
+            );
+            if (mr.length > 0) meetingPrivacy = (mr[0].get("privacy") as string) || "public";
+          } catch { /* fall through */ }
+
+          if (meetingPrivacy === "private") {
+            // Check if already admitted (via waiting room)
+            const waitingMap  = waitingRooms.get(roomId);
+            const admittedEntry = waitingMap
+              ? Array.from(waitingMap.values()).find(
+                  w => w.email === session.email && (w.status === "admitted" || w.status === "entered")
+                )
+              : undefined;
+
+            if (admittedEntry) {
+              // Mark as entered so refreshes don't bounce back
+              admittedEntry.status = "entered";
+              // fall through to serve the actual room page
+            } else {
+              // Check if user is a sub-meeting admin (PARTICIPATES_IN with admin role)
+              let isSubAdmin = false;
+              try {
+                const ar = await runQuery(
+                  "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $roomId}) " +
+                  "WHERE r.role IN ['admin', 'superadmin'] RETURN r.role AS role",
+                  { email: session.email, roomId }
+                );
+                isSubAdmin = ar.length > 0;
+                if (isSubAdmin) serverRole = "admin";
+              } catch { /* non-critical */ }
+
+              if (!isSubAdmin) {
+                // Serve room page with pre-admitted=false so lobby shows "Ask to Join" flow
+                return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy, false));
+              }
+            }
+          }
+        }
       }
-      return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole));
+
+      return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy));
     }
 
     // ── Token API (protected) ─────────────────────────────────────────────────
@@ -337,22 +408,22 @@ serve({
     if (path === "/api/meetings" && req.method === "POST") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       try {
-        const b = await req.json() as { label?: string; adminName?: string; micDefault?: string; camDefault?: string };
+        const b = await req.json() as { label?: string; adminName?: string; micDefault?: string; camDefault?: string; privacy?: string };
         const label = (b.label || "").trim();
         if (!label) return json({ error: "label required" }, 400);
-        // Use authenticated user's name for display; link by email for ownership tracking
-        const admin = (b.adminName || session.name || "Host").trim();
-        const email = session.email;
-        const id    = generateId(label);
-        const now   = Date.now();
+        const admin   = (b.adminName || session.name || "Host").trim();
+        const email   = session.email;
+        const id      = generateId(label);
+        const now     = Date.now();
+        const privacy = b.privacy === "private" ? "private" : "public";
         await runQuery(
           "MATCH (u:User {email: $email}) " +
           "CREATE (m:Meeting { id: $id, label: $label, adminName: $admin, status: 'active', " +
-          "micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
+          "privacy: $privacy, micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
           "CREATE (u)-[:CREATED {at: $now}]->(m)",
-          { email, admin, id, label, mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
+          { email, admin, id, label, privacy, mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
         );
-        return json({ ok: true, id, label });
+        return json({ ok: true, id, label, privacy });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
@@ -366,13 +437,14 @@ serve({
           "OPTIONAL MATCH (p:User)-[r:PARTICIPATES_IN]->(m) WHERE r.leftAt IS NULL " +
           "WITH m, count(DISTINCT p) AS participants " +
           "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
-          "m.status AS status, m.createdAt AS createdAt, participants " +
+          "m.status AS status, m.createdAt AS createdAt, m.privacy AS privacy, participants " +
           "ORDER BY m.createdAt DESC LIMIT 50",
           { email: session.email }
         );
         return json(recs.map(r => ({
           id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
           status: r.get("status"), createdAt: r.get("createdAt"), participants: r.get("participants"),
+          privacy: r.get("privacy") || "public",
         })));
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -560,21 +632,22 @@ serve({
       try {
         const b = await req.json() as {
           parentId: string; label: string; adminName: string;
-          micDefault?: string; camDefault?: string;
+          micDefault?: string; camDefault?: string; privacy?: string;
         };
-        const nodeId = generateId(b.label);
-        const now    = Date.now();
+        const nodeId  = generateId(b.label);
+        const now     = Date.now();
+        const privacy = b.privacy === "private" ? "private" : "public";
         await runQuery(
           "MATCH (parent:Meeting {id: $parentId}) " +
           "CREATE (child:Meeting { id: $nodeId, label: $label, adminName: $admin, status: 'active', " +
-          "micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
+          "privacy: $privacy, micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
           "CREATE (parent)-[:HAS_CHILD]->(child)",
           { parentId: b.parentId, nodeId, label: b.label,
-            admin: b.adminName || "Admin",
+            admin: b.adminName || "Admin", privacy,
             mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
         );
         return json({ ok: true, node: { id: nodeId, label: b.label, parentId: b.parentId,
-          adminName: b.adminName || "Admin", participants: 0, status: "active",
+          adminName: b.adminName || "Admin", participants: 0, status: "active", privacy,
           micDefault: b.micDefault || "allow", camDefault: b.camDefault || "allow", createdAt: now } });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -588,6 +661,142 @@ serve({
           "MATCH (m:Meeting {id: $nodeId}) SET m.micDefault = $mic, m.camDefault = $cam",
           { nodeId, mic: b.micDefault || "allow", cam: b.camDefault || "allow" }
         );
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // PATCH /api/meetings/:id/privacy — admin changes privacy mid-meeting
+    const privacyPatchMatch = path.match(/^\/api\/meetings\/([^/]+)\/privacy$/);
+    if (privacyPatchMatch && req.method === "PATCH") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(privacyPatchMatch[1]);
+      try {
+        const b = await req.json() as { privacy?: string };
+        const newPrivacy = b.privacy === "private" ? "private" : "public";
+        // Only the meeting creator can change this
+        const cr = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) RETURN u.email AS e",
+          { email: session.email, mid }
+        );
+        if (!cr.length) return json({ error: "Forbidden" }, 403);
+        await runQuery(
+          "MATCH (m:Meeting {id: $mid}) SET m.privacy = $privacy",
+          { mid, privacy: newPrivacy }
+        );
+        // Switching to public → auto-admit everyone currently waiting so they're not stuck
+        if (newPrivacy === "public") {
+          const users = waitingRooms.get(mid);
+          if (users) users.forEach(u => { if (u.status === "waiting") u.status = "admitted"; });
+        }
+        return json({ ok: true, privacy: newPrivacy });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // ── Waiting room APIs ─────────────────────────────────────────────────────
+
+    // POST /api/meetings/:id/knock — non-creator user requests entry to private meeting
+    const knockMatch2 = path.match(/^\/api\/meetings\/([^/]+)\/knock$/);
+    if (knockMatch2 && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(knockMatch2[1]);
+      try {
+        const mr = await runQuery(
+          "MATCH (m:Meeting {id: $mid}) RETURN m.privacy AS privacy", { mid }
+        );
+        if (!mr.length) return json({ error: "Meeting not found" }, 404);
+        if ((mr[0].get("privacy") as string) !== "private")
+          return json({ error: "Meeting is public — join directly" }, 400);
+
+        if (!waitingRooms.has(mid)) waitingRooms.set(mid, new Map());
+        const users = waitingRooms.get(mid)!;
+
+        // If already in the map, return existing entry (unless rejected — allow re-knock)
+        for (const [wid, u] of users.entries()) {
+          if (u.email === session.email) {
+            if (u.status === "rejected") { users.delete(wid); break; }
+            return json({ waitingId: wid, status: u.status });
+          }
+        }
+
+        const waitingId = "w-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+        users.set(waitingId, {
+          waitingId, name: session.name, email: session.email,
+          knockedAt: Date.now(), status: "waiting",
+        });
+        return json({ waitingId, status: "waiting" });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // GET /api/meetings/:id/knock-status/:waitingId — waiting user polls their status
+    const knockStatusMatch2 = path.match(/^\/api\/meetings\/([^/]+)\/knock-status\/([^/]+)$/);
+    if (knockStatusMatch2 && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(knockStatusMatch2[1]);
+      const wid = decodeURIComponent(knockStatusMatch2[2]);
+      const users = waitingRooms.get(mid);
+      const entry = users?.get(wid);
+      if (!entry) return json({ status: "expired" });
+      if (entry.email !== session.email) return json({ error: "Unauthorized" }, 403);
+      return json({ status: entry.status });
+    }
+
+    // GET /api/meetings/:id/waiting — admin polls list of waiting users
+    const waitingListMatch2 = path.match(/^\/api\/meetings\/([^/]+)\/waiting$/);
+    if (waitingListMatch2 && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(waitingListMatch2[1]);
+      try {
+        const cr = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) RETURN u.email AS e",
+          { email: session.email, mid }
+        );
+        if (!cr.length) return json({ error: "Forbidden" }, 403);
+        const users = waitingRooms.get(mid);
+        const waiting = users
+          ? Array.from(users.values()).filter(u => u.status === "waiting")
+          : [];
+        return json(waiting.map(u => ({
+          waitingId: u.waitingId, name: u.name, knockedAt: u.knockedAt,
+        })));
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // POST /api/meetings/:id/admit/:waitingId — admin admits a waiting user
+    const admitMatch2 = path.match(/^\/api\/meetings\/([^/]+)\/admit\/([^/]+)$/);
+    if (admitMatch2 && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(admitMatch2[1]);
+      const wid = decodeURIComponent(admitMatch2[2]);
+      try {
+        const cr = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) RETURN u.email AS e",
+          { email: session.email, mid }
+        );
+        if (!cr.length) return json({ error: "Forbidden" }, 403);
+        const users = waitingRooms.get(mid);
+        const entry = users?.get(wid);
+        if (!entry) return json({ error: "Not found" }, 404);
+        entry.status = "admitted";
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // POST /api/meetings/:id/reject/:waitingId — admin rejects a waiting user
+    const rejectMatch2 = path.match(/^\/api\/meetings\/([^/]+)\/reject\/([^/]+)$/);
+    if (rejectMatch2 && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(rejectMatch2[1]);
+      const wid = decodeURIComponent(rejectMatch2[2]);
+      try {
+        const cr = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) RETURN u.email AS e",
+          { email: session.email, mid }
+        );
+        if (!cr.length) return json({ error: "Forbidden" }, 403);
+        const users = waitingRooms.get(mid);
+        const entry = users?.get(wid);
+        if (!entry) return json({ error: "Not found" }, 404);
+        entry.status = "rejected";
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
     }

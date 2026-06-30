@@ -901,6 +901,15 @@
   --primary-border: rgba(209,80,0,.4);
 }
 
+/* -- Lobby waiting-state animations -------------------------------------- */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes dotPulse {
+  0%, 80%, 100% { opacity: .3; transform: scale(1); }
+  40%           { opacity: 1;  transform: scale(1.2); }
+}
+
 /* -- Video grid: rows fill available height ------------------------------ */
 .video-grid { grid-auto-rows: 1fr; }
 

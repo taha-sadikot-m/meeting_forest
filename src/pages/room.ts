@@ -1,9 +1,12 @@
-export function roomPage(roomId: string, user?: { name: string; email: string }, serverRole?: string): string {
-  const safeRoomId   = roomId || 'my-room';
-  const prefillName  = (user?.name || "").replace(/`/g, "'").replace(/"/g, "&quot;");
+export function roomPage(roomId: string, user?: { name: string; email: string }, serverRole?: string, meetingPrivacy?: string, serverPreAdmitted?: boolean): string {
+  const safeRoomId      = roomId || 'my-room';
+  const prefillName     = (user?.name || "").replace(/`/g, "'").replace(/"/g, "&quot;");
   // Sanitize server-injected role (only allow known role strings)
-  const allowedRoles = ['superadmin', 'admin', 'participant'];
-  const injectedRole = allowedRoles.includes(serverRole || '') ? (serverRole as string) : '';
+  const allowedRoles    = ['superadmin', 'admin', 'participant'];
+  const injectedRole    = allowedRoles.includes(serverRole || '') ? (serverRole as string) : '';
+  const isPrivateMeeting = meetingPrivacy === 'private';
+  const preAdmitted      = serverPreAdmitted !== false;  // true unless explicitly false
+  const userInitial      = (user?.name?.[0] || '?').toUpperCase();
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -358,6 +361,20 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <span class="ctrl-label">People</span>
     </div>
 
+    <!-- Waiting room button — admin of private meeting only -->
+    <div class="control-group" id="waitingCtrlGroup" style="display:none">
+      <button class="ctrl-btn" id="waitingBtn" onclick="toggleWaitingPanel()" title="Waiting Room">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        <span class="ctrl-notif" id="waitingNotif" style="display:none">0</span>
+      </button>
+      <span class="ctrl-label">Waiting</span>
+    </div>
+
     <button class="ctrl-btn leave-btn" onclick="leaveRoom()">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -374,23 +391,12 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
 <!-- ── More options menu ───────────────────────────────────────────────────── -->
 <div class="more-menu" id="moreMenu" style="display:none">
-  <button class="more-menu-item" onclick="toggleVirtualBackground()">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9l4-4 4 4 4-4 4 4"/></svg>
-    Virtual Background
-  </button>
-  <button class="more-menu-item" onclick="toggleNoiseSuppression()">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M23 9l-6 6"/><path d="M17 9l6 6"/></svg>
-    Noise Suppression
-    <span class="more-menu-badge">ON</span>
-  </button>
-  <div class="more-menu-divider"></div>
-  <button class="more-menu-item" onclick="showStats()">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-    Call Statistics
-  </button>
-  <button class="more-menu-item" onclick="showSettings()">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-    Audio &amp; Video Settings
+  <button class="more-menu-item" onclick="toggleMore();openSettings()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+    </svg>
+    Settings
   </button>
   <div class="more-menu-divider"></div>
   <button class="more-menu-item danger" onclick="leaveRoom()">
@@ -410,63 +416,124 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 <!-- ── Lobby overlay ──────────────────────────────────────────────────────── -->
 <div class="lobby-overlay" id="lobbyOverlay">
   <div class="lobby-card">
-    <div style="text-align:center;margin-bottom:24px">
-      <div class="sb-logo-icon" style="width:52px;height:52px;border-radius:14px;margin:0 auto 14px">
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="white" stroke-width="2.5">
+
+    <!-- Header — always visible -->
+    <div style="text-align:center;margin-bottom:20px">
+      <div class="sb-logo-icon" style="width:44px;height:44px;border-radius:12px;margin:0 auto 12px">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2.5">
           <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
         </svg>
       </div>
-      <h2 style="font-size:22px;font-weight:800;margin-bottom:6px">Ready to join?</h2>
-      <p style="font-size:14px;color:rgba(255,255,255,.55)">Room: <strong style="color:rgba(255,255,255,.85)">${safeRoomId}</strong></p>
+      <h2 style="font-size:20px;font-weight:800;margin-bottom:4px" id="lobbyTitle">Ready to join?</h2>
+      <p style="font-size:13px;color:rgba(255,255,255,.5)" id="lobbySubtitle">Room: <strong style="color:rgba(255,255,255,.8)">${safeRoomId}</strong></p>
       <div id="lobbyRoleBadge" style="margin-top:8px;display:none">
         <span style="font-size:11px;font-weight:700;background:#FFF3E9;color:#D15000;border:1px solid #FED7AA;border-radius:20px;padding:3px 10px"></span>
       </div>
     </div>
 
-    <div class="lobby-preview">
-      <video id="lobbyVideo" muted autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:12px;background:#111"></video>
-      <div class="lobby-preview-name" id="lobbyPreviewName">Loading camera…</div>
-    </div>
-
-    <div style="display:flex;gap:12px;justify-content:center;margin-bottom:20px">
-      <button class="ctrl-btn" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Mic">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-        </svg>
-      </button>
-      <button class="ctrl-btn" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-        </svg>
-      </button>
-    </div>
-
-    <div class="form-group" style="margin-bottom:16px">
-      <label class="form-label">Your Name</label>
-      <input class="form-input" id="lobbyName" placeholder="Enter your display name" value="${prefillName}" />
-    </div>
-
-    <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center" onclick="joinFromLobby()">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
-      </svg>
-      Join Meeting
-    </button>
-    <!-- Shareable link row -->
-    <div style="margin-top:14px;padding:10px 12px;background:rgba(255,255,255,.07);border-radius:10px;border:1px solid rgba(255,255,255,.12)">
-      <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Room Link</div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span id="lobbyLinkText" style="flex:1;font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:monospace"></span>
-        <button class="btn btn-ghost btn-sm" style="flex-shrink:0;gap:5px;padding:5px 10px" onclick="copyLobbyLink(this)">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
-            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          Copy
-        </button>
+    <!-- ── Setup State (default) ──────────────────────────────────────────── -->
+    <div id="lobbySetupState">
+      <div class="lobby-preview">
+        <video id="lobbyVideo" muted autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:12px;background:#111"></video>
+        <div class="lobby-preview-name" id="lobbyPreviewName">Loading camera…</div>
       </div>
+
+      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:20px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+          <button class="ctrl-btn" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
+            <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+              <line x1="1" y1="1" x2="23" y2="23"/>
+              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+              <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
+          <span style="font-size:11px;color:rgba(255,255,255,.4);font-weight:600">Mic</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
+          <button class="ctrl-btn" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
+            <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+            <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+              <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
+              <line x1="1" y1="1" x2="23" y2="23"/>
+            </svg>
+          </button>
+          <span style="font-size:11px;color:rgba(255,255,255,.4);font-weight:600">Cam</span>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px">
+        <label class="form-label">Your Name</label>
+        <input class="form-input" id="lobbyName" placeholder="Enter your display name" value="${prefillName}" />
+      </div>
+
+      <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center" id="lobbyJoinBtn" onclick="lobbyJoinOrKnock()">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
+        </svg>
+        Join Now
+      </button>
+
+      <div style="margin-top:14px;padding:10px 12px;background:rgba(255,255,255,.07);border-radius:10px;border:1px solid rgba(255,255,255,.12)">
+        <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Room Link</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="lobbyLinkText" style="flex:1;font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:monospace"></span>
+          <button class="btn btn-ghost btn-sm" style="flex-shrink:0;gap:5px;padding:5px 10px" onclick="copyLobbyLink(this)">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy
+          </button>
+        </div>
+      </div>
+      <a href="/" class="btn btn-ghost btn-lg" style="width:100%;justify-content:center;margin-top:10px">← Back to Dashboard</a>
     </div>
-    <a href="/" class="btn btn-ghost btn-lg" style="width:100%;justify-content:center;margin-top:10px">← Back to Dashboard</a>
+
+    <!-- ── Waiting State (private meeting, knocking) ──────────────────────── -->
+    <div id="lobbyWaitingState" style="display:none;text-align:center;padding:8px 0 4px">
+      <!-- Avatar with spinning ring -->
+      <div style="position:relative;width:84px;height:84px;margin:4px auto 20px">
+        <div id="lobbyWaitInitial" style="width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,#7C3AED,#4F46E5);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:white;position:relative;z-index:1">${userInitial}</div>
+        <div style="position:absolute;inset:-7px;border-radius:50%;border:2.5px solid transparent;border-top-color:#D15000;animation:spin 1.4s linear infinite"></div>
+      </div>
+      <!-- Animated dots -->
+      <div style="display:flex;gap:6px;justify-content:center;margin-bottom:18px">
+        <div style="width:8px;height:8px;border-radius:50%;background:#D15000;animation:dotPulse 1.4s ease-in-out infinite"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#D15000;animation:dotPulse 1.4s ease-in-out .2s infinite"></div>
+        <div style="width:8px;height:8px;border-radius:50%;background:#D15000;animation:dotPulse 1.4s ease-in-out .4s infinite"></div>
+      </div>
+      <p style="font-size:15px;font-weight:700;color:rgba(255,255,255,.85);margin-bottom:6px">Waiting for the host…</p>
+      <p id="lobbyWaitTimer" style="font-size:13px;color:rgba(255,255,255,.4);margin-bottom:28px">0s</p>
+      <button class="btn btn-ghost btn-lg" style="width:100%;justify-content:center" onclick="cancelKnock()">
+        Cancel Request
+      </button>
+    </div>
+
+    <!-- ── Denied State ───────────────────────────────────────────────────── -->
+    <div id="lobbyDeniedState" style="display:none;text-align:center;padding:8px 0 4px">
+      <div style="width:72px;height:72px;border-radius:50%;background:rgba(239,68,68,.12);border:2px solid rgba(239,68,68,.4);display:flex;align-items:center;justify-content:center;margin:4px auto 20px">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#EF4444" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+      </div>
+      <p style="font-size:17px;font-weight:800;color:#EF4444;margin-bottom:8px">Entry not allowed</p>
+      <p style="font-size:13px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:28px">The host chose not to admit you<br>to this meeting.</p>
+      <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center;margin-bottom:10px" onclick="showLobbySetup()">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
+        </svg>
+        Try Again
+      </button>
+      <a href="/" class="btn btn-ghost btn-lg" style="width:100%;justify-content:center">← Back to Dashboard</a>
+    </div>
+
   </div>
 </div>
 
@@ -543,6 +610,149 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
     <div class="modal-footer" style="margin-top:16px">
       <button class="btn btn-ghost" onclick="closeInviteModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Meeting Info modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="infoModal" style="z-index:250">
+  <div class="modal" style="max-width:460px">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div style="width:38px;height:38px;border-radius:10px;background:rgba(209,80,0,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#D15000" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+        </svg>
+      </div>
+      <div>
+        <h3 style="margin:0;font-size:17px;font-weight:800">Meeting Info</h3>
+        <p style="margin:0;font-size:13px;color:rgba(255,255,255,.4)" id="infoModalSubtitle">Room details</p>
+      </div>
+    </div>
+
+    <!-- Room info rows -->
+    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
+        <span style="font-size:12px;color:rgba(255,255,255,.35);min-width:64px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Room</span>
+        <span id="infoRoomId" style="font-size:13px;color:rgba(255,255,255,.8);font-family:monospace;flex:1;word-break:break-all"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:12px 14px">
+        <span style="font-size:12px;color:rgba(255,255,255,.35);min-width:64px;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Status</span>
+        <span style="display:flex;align-items:center;gap:6px;font-size:13px;color:#10B981;font-weight:600">
+          <span style="width:7px;height:7px;border-radius:50%;background:#10B981;display:inline-block"></span>
+          Live
+        </span>
+      </div>
+    </div>
+
+    <!-- Privacy section -->
+    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;margin-bottom:16px">
+      <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85)">Meeting Privacy</div>
+          <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:2px">Control who can join this meeting</div>
+        </div>
+        <!-- Non-admin: read-only badge -->
+        <span id="infoPrivacyBadge" style="display:none;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px"></span>
+      </div>
+      <!-- Admin: toggle -->
+      <div id="infoPrivacyToggle" style="display:none;padding:14px">
+        <div style="display:flex;gap:10px">
+          <label id="infoPublicLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+            <input type="radio" name="infoPrivacy" value="public" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
+            <div>
+              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Public
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Anyone with the link joins directly</div>
+            </div>
+          </label>
+          <label id="infoPrivateLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+            <input type="radio" name="infoPrivacy" value="private" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
+            <div>
+              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Private
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">You admit each person manually</div>
+            </div>
+          </label>
+        </div>
+        <button class="btn btn-primary" id="infoSavePrivacy" style="margin-top:12px;width:100%;justify-content:center" onclick="saveInfoPrivacy()">
+          Save Changes
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="margin-top:4px">
+      <button class="btn btn-ghost" onclick="closeInfoModal()">Close</button>
+      <button class="btn btn-primary" style="gap:6px" onclick="closeInfoModal();showInviteModal()">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+        </svg>
+        Share Link
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Meeting Settings modal (from More menu) ────────────────────────────── -->
+<div class="modal-overlay" id="settingsModal" style="z-index:250">
+  <div class="modal" style="max-width:420px">
+
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <div style="width:38px;height:38px;border-radius:10px;background:rgba(209,80,0,.15);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#D15000" stroke-width="2.5">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+        </svg>
+      </div>
+      <div>
+        <h3 style="margin:0;font-size:17px;font-weight:800">Meeting Settings</h3>
+        <p style="margin:0;font-size:13px;color:rgba(255,255,255,.4)">Adjust settings for this session</p>
+      </div>
+    </div>
+
+    <!-- Privacy setting -->
+    <div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;overflow:hidden;margin-bottom:16px">
+      <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.06)">
+        <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85)">Meeting Privacy</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:2px">Control who can join this meeting</div>
+      </div>
+      <div id="settingsPrivacyToggle" style="padding:14px">
+        <div style="display:flex;gap:10px">
+          <label id="settingsPublicLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+            <input type="radio" name="settingsPrivacy" value="public" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
+            <div>
+              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Public
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Anyone joins directly</div>
+            </div>
+          </label>
+          <label id="settingsPrivateLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+            <input type="radio" name="settingsPrivacy" value="private" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
+            <div>
+              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Private
+              </div>
+              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Admit each person manually</div>
+            </div>
+          </label>
+        </div>
+        <button class="btn btn-primary" id="settingsSavePrivacy" style="margin-top:12px;width:100%;justify-content:center" onclick="saveSettingsPrivacy()">
+          Save Changes
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-footer" style="margin-top:4px">
+      <button class="btn btn-ghost" onclick="closeSettingsModal()">Close</button>
     </div>
   </div>
 </div>
@@ -663,10 +873,42 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       </div>
     </div>
 
+    <div class="smm-field">
+      <label class="smm-label">Meeting Privacy</label>
+      <div style="display:flex;gap:16px;margin-top:4px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.75)">
+          <input type="radio" name="smmPrivacy" value="public" checked style="accent-color:#D15000" />
+          <span><strong>Public</strong> — anyone with link joins directly</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.75)">
+          <input type="radio" name="smmPrivacy" value="private" style="accent-color:#D15000" />
+          <span><strong>Private</strong> — admit each person</span>
+        </label>
+      </div>
+    </div>
+
     <div class="smm-footer">
       <button class="smm-btn smm-btn-cancel" onclick="closeSubMeetingModal()">Cancel</button>
       <button class="smm-btn smm-btn-create" onclick="createSubMeeting()">Create Sub-meeting</button>
     </div>
+  </div>
+</div>
+
+<!-- ── Waiting Room Panel (admin of private meeting) ─────────────────────── -->
+<div id="waitingPanel" style="display:none;position:fixed;right:16px;bottom:88px;width:320px;max-height:420px;background:#1C1F2E;border:1.5px solid rgba(255,255,255,.1);border-radius:16px;z-index:220;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.5)">
+  <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#D15000" stroke-width="2.5">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+      </svg>
+      <span style="font-size:14px;font-weight:700;color:rgba(255,255,255,.9)">Waiting Room</span>
+      <span id="waitingPanelCount" style="font-size:11px;background:rgba(209,80,0,.2);color:#ff7b2e;padding:2px 8px;border-radius:20px;font-weight:700"></span>
+    </div>
+    <button id="waitingPanelClose" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:20px;line-height:1;padding:0 2px">&times;</button>
+  </div>
+  <div id="waitingList" style="flex:1;overflow-y:auto;min-height:60px">
+    <div style="text-align:center;padding:24px 16px;color:rgba(255,255,255,.35);font-size:13px">No one waiting</div>
   </div>
 </div>
 
@@ -675,9 +917,12 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
 <script src="/public/tree.js"></script>
 <script>
-  const ROOM_ID   = '${safeRoomId}';
-  const urlParams = new URLSearchParams(location.search);
-  let userName    = urlParams.get('name') || '${prefillName}';
+  const ROOM_ID              = '${safeRoomId}';
+  let currentPrivacy         = '${isPrivateMeeting ? "private" : "public"}';
+  const SERVER_PRE_ADMITTED  = ${preAdmitted};
+  const USER_INITIAL         = ${JSON.stringify(userInitial)};
+  const urlParams            = new URLSearchParams(location.search);
+  let userName           = urlParams.get('name') || '${prefillName}';
   // Server-injected role takes precedence (set when server verifies user is meeting creator)
   const _serverRole = '${injectedRole}';
   const userRole  = _serverRole || urlParams.get('role') || 'participant'; // 'superadmin' | 'admin' | 'participant'
@@ -697,6 +942,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   if (isAdmin) {
     document.getElementById('treeCtrlGroup').style.display = '';
     document.getElementById('tabPermissions').style.display = '';
+    if (currentPrivacy === 'private') {
+      document.getElementById('waitingCtrlGroup').style.display = '';
+    }
   }
 
   // Lobby role badge
@@ -710,10 +958,14 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     badge.querySelector('span').textContent = '👑 Meeting Admin';
   }
 
-  // Pre-fill lobby name and link
+  // Pre-fill lobby name, link, and join button text
   document.getElementById('lobbyName').value = userName;
   if (userName) document.getElementById('lobbyPreviewName').textContent = userName;
   document.getElementById('lobbyLinkText').textContent = window.location.origin + '/room/' + activeRoomId;
+  if (currentPrivacy === 'private' && !SERVER_PRE_ADMITTED) {
+    document.getElementById('lobbyJoinBtn').innerHTML =
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Ask to Join';
+  }
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   let timerSeconds = 0, timerInterval = null;
@@ -773,6 +1025,100 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     await connectToLiveKit();
     // Init tree for admins
     if (isAdmin) initTree();
+    // Start polling waiting users for admin of private meetings
+    if (currentPrivacy === 'private') startWaitingPoll();
+  }
+
+  // ── Lobby state machine (Google Meet-style) ───────────────────────────────
+  var _lobbyKnockId = null, _lobbyKnockPoll = null, _lobbyKnockTimer = null, _lobbyKnockStart = null;
+
+  function lobbyJoinOrKnock() {
+    var name = document.getElementById('lobbyName').value.trim();
+    if (!name) { showToast('Please enter your name', 'error'); return; }
+    userName = name;
+    if (currentPrivacy === 'private' && !SERVER_PRE_ADMITTED) {
+      askToJoin();
+    } else {
+      joinFromLobby();
+    }
+  }
+
+  async function askToJoin() {
+    try {
+      var res = await fetch(
+        '/api/meetings/' + encodeURIComponent(activeRoomId) + '/knock',
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+      var data = await res.json();
+      if (!res.ok) { showToast(data.error || 'Could not reach host', 'error'); return; }
+      _lobbyKnockId = data.waitingId;
+      // Already decided
+      if (data.status === 'admitted' || data.status === 'entered') { await joinFromLobby(); return; }
+      if (data.status === 'rejected') { showLobbyDenied(); return; }
+      // Enter waiting state and start polling
+      showLobbyWaiting();
+      _lobbyKnockPoll = setInterval(async function() {
+        if (!_lobbyKnockId) { clearInterval(_lobbyKnockPoll); return; }
+        try {
+          var r = await fetch(
+            '/api/meetings/' + encodeURIComponent(activeRoomId) +
+            '/knock-status/' + encodeURIComponent(_lobbyKnockId)
+          );
+          var d = await r.json();
+          if (d.status === 'admitted' || d.status === 'entered') {
+            clearInterval(_lobbyKnockPoll); clearInterval(_lobbyKnockTimer);
+            document.getElementById('lobbyTitle').textContent = "You've been admitted!";
+            document.getElementById('lobbySubtitle').textContent = 'Entering meeting…';
+            setTimeout(function() { joinFromLobby(); }, 1000);
+          } else if (d.status === 'rejected' || d.status === 'expired') {
+            clearInterval(_lobbyKnockPoll); clearInterval(_lobbyKnockTimer);
+            showLobbyDenied();
+          }
+        } catch(e) { /* network hiccup — keep polling */ }
+      }, 2000);
+    } catch(e) {
+      showToast('Could not connect to server', 'error');
+    }
+  }
+
+  function cancelKnock() {
+    _lobbyKnockId = null;
+    clearInterval(_lobbyKnockPoll); _lobbyKnockPoll = null;
+    clearInterval(_lobbyKnockTimer); _lobbyKnockTimer = null;
+    showLobbySetup();
+  }
+
+  function showLobbySetup() {
+    document.getElementById('lobbySetupState').style.display   = '';
+    document.getElementById('lobbyWaitingState').style.display = 'none';
+    document.getElementById('lobbyDeniedState').style.display  = 'none';
+    document.getElementById('lobbyTitle').textContent = 'Ready to join?';
+    document.getElementById('lobbySubtitle').innerHTML =
+      'Room: <strong style="color:rgba(255,255,255,.8)">' + activeRoomId + '</strong>';
+  }
+
+  function showLobbyWaiting() {
+    document.getElementById('lobbySetupState').style.display   = 'none';
+    document.getElementById('lobbyWaitingState').style.display = '';
+    document.getElementById('lobbyDeniedState').style.display  = 'none';
+    document.getElementById('lobbyTitle').textContent = 'Asking to join…';
+    document.getElementById('lobbySubtitle').textContent = 'Waiting for host approval';
+    _lobbyKnockStart = Date.now();
+    document.getElementById('lobbyWaitTimer').textContent = '0s';
+    _lobbyKnockTimer = setInterval(function() {
+      var e = Math.floor((Date.now() - _lobbyKnockStart) / 1000);
+      var m = Math.floor(e / 60);
+      document.getElementById('lobbyWaitTimer').textContent = m > 0 ? m + 'm ' + (e % 60) + 's' : e + 's';
+    }, 1000);
+  }
+
+  function showLobbyDenied() {
+    document.getElementById('lobbySetupState').style.display   = 'none';
+    document.getElementById('lobbyWaitingState').style.display = 'none';
+    document.getElementById('lobbyDeniedState').style.display  = '';
+    document.getElementById('lobbyTitle').textContent = 'Entry not allowed';
+    document.getElementById('lobbySubtitle').textContent = '';
+    clearInterval(_lobbyKnockTimer); _lobbyKnockTimer = null;
   }
 
   // ── Tree canvas ───────────────────────────────────────────────────────────
@@ -877,6 +1223,152 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     updateTreeBadge();
   };
 
+  // ── Waiting Room Admin Panel ─────────────────────────────────────────────
+  let waitingPollInterval = null;
+  let waitingPanelOpen    = false;
+
+  function toggleWaitingPanel() {
+    const panel = document.getElementById('waitingPanel');
+    waitingPanelOpen = !waitingPanelOpen;
+    panel.style.display = waitingPanelOpen ? 'flex' : 'none';
+    document.getElementById('waitingBtn').classList.toggle('active', waitingPanelOpen);
+  }
+
+  document.getElementById('waitingPanelClose').addEventListener('click', function() {
+    document.getElementById('waitingPanel').style.display = 'none';
+    document.getElementById('waitingBtn').classList.remove('active');
+    waitingPanelOpen = false;
+  });
+
+  function startWaitingPoll() {
+    if (!isAdmin) return;
+    if (waitingPollInterval) return; // already running
+    pollWaitingUsers(); // run immediately
+    waitingPollInterval = setInterval(pollWaitingUsers, 3000);
+  }
+
+  function stopWaitingPoll() {
+    if (waitingPollInterval) { clearInterval(waitingPollInterval); waitingPollInterval = null; }
+    renderWaitingList([]);
+    const notif = document.getElementById('waitingNotif');
+    if (notif) { notif.textContent = '0'; notif.style.display = 'none'; }
+    const badge = document.getElementById('waitingPanelCount');
+    if (badge) badge.textContent = '';
+  }
+
+  async function pollWaitingUsers() {
+    try {
+      const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/waiting');
+      if (!res.ok) return;
+      const waiters = await res.json();
+      renderWaitingList(waiters);
+    } catch (e) { /* network hiccup */ }
+  }
+
+  function renderWaitingList(waiters) {
+    const count = waiters.length;
+    // Update badge
+    const notif = document.getElementById('waitingNotif');
+    if (notif) { notif.textContent = count; notif.style.display = count > 0 ? '' : 'none'; }
+    const badge = document.getElementById('waitingPanelCount');
+    if (badge) badge.textContent = count > 0 ? count + ' waiting' : '';
+
+    const list = document.getElementById('waitingList');
+    if (!list) return;
+
+    if (count === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:24px 16px;color:rgba(255,255,255,.35);font-size:13px">No one waiting</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    waiters.forEach(function(w) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05)';
+
+      // Avatar
+      const av = document.createElement('div');
+      av.style.cssText = 'width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#D15000,#ff7b2e);display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:15px;flex-shrink:0';
+      av.textContent = (w.name || '?')[0].toUpperCase();
+
+      // Info
+      const info = document.createElement('div');
+      info.style.flex = '1';
+      info.style.minWidth = '0';
+      const nameDiv = document.createElement('div');
+      nameDiv.style.cssText = 'font-size:13px;font-weight:600;color:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      nameDiv.textContent = w.name || 'Unknown';
+      const timeDiv = document.createElement('div');
+      timeDiv.style.cssText = 'font-size:11px;color:rgba(255,255,255,.35);margin-top:1px';
+      timeDiv.textContent = waitingElapsed(w.knockedAt);
+      info.appendChild(nameDiv);
+      info.appendChild(timeDiv);
+
+      // Buttons
+      const btnRow = document.createElement('div');
+      btnRow.style.cssText = 'display:flex;gap:5px;flex-shrink:0';
+
+      const admitBtn = document.createElement('button');
+      admitBtn.style.cssText = 'padding:5px 10px;border-radius:7px;border:none;background:#D15000;color:white;font-size:12px;font-weight:700;cursor:pointer';
+      admitBtn.textContent = 'Admit';
+      admitBtn.addEventListener('click', function() { admitUser(w.waitingId, admitBtn, rejectBtn, nameDiv.textContent); });
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.style.cssText = 'padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,.4);background:transparent;color:#EF4444;font-size:12px;font-weight:700;cursor:pointer';
+      rejectBtn.textContent = 'Reject';
+      rejectBtn.addEventListener('click', function() { rejectUser(w.waitingId, admitBtn, rejectBtn, nameDiv.textContent); });
+
+      btnRow.appendChild(admitBtn);
+      btnRow.appendChild(rejectBtn);
+      row.appendChild(av);
+      row.appendChild(info);
+      row.appendChild(btnRow);
+      list.appendChild(row);
+    });
+  }
+
+  function waitingElapsed(ts) {
+    const secs = Math.floor((Date.now() - ts) / 1000);
+    if (secs < 60) return 'Waiting ' + secs + 's';
+    return 'Waiting ' + Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+  }
+
+  async function admitUser(waitingId, admitBtn, rejectBtn, name) {
+    admitBtn.disabled = true; admitBtn.textContent = '…';
+    try {
+      const res = await fetch(
+        '/api/meetings/' + encodeURIComponent(activeRoomId) + '/admit/' + encodeURIComponent(waitingId),
+        { method: 'POST' }
+      );
+      if (res.ok) {
+        showToast(name + ' admitted', 'success');
+        admitBtn.textContent = '✓'; admitBtn.style.background = '#059669';
+        rejectBtn.style.display = 'none';
+      } else {
+        admitBtn.disabled = false; admitBtn.textContent = 'Admit';
+        showToast('Could not admit user', 'error');
+      }
+    } catch (e) { admitBtn.disabled = false; admitBtn.textContent = 'Admit'; }
+  }
+
+  async function rejectUser(waitingId, admitBtn, rejectBtn, name) {
+    rejectBtn.disabled = true; rejectBtn.textContent = '…';
+    try {
+      const res = await fetch(
+        '/api/meetings/' + encodeURIComponent(activeRoomId) + '/reject/' + encodeURIComponent(waitingId),
+        { method: 'POST' }
+      );
+      if (res.ok) {
+        showToast(name + ' rejected', 'info');
+        rejectBtn.textContent = '✕'; rejectBtn.style.color = '#9CA3AF';
+        admitBtn.style.display = 'none';
+      } else {
+        rejectBtn.disabled = false; rejectBtn.textContent = 'Reject';
+        showToast('Could not reject user', 'error');
+      }
+    } catch (e) { rejectBtn.disabled = false; rejectBtn.textContent = 'Reject'; }
+  }
+
   // ── Sub-meeting creation ──────────────────────────────────────────────────
   function closeSubMeetingModal() {
     document.getElementById('subMeetingModal').classList.remove('open');
@@ -931,6 +1423,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const parentId = document.getElementById('smmParentId').value;
     const micPerm  = document.getElementById('smmMicPerm').value;
     const camPerm  = document.getElementById('smmCamPerm').value;
+    const privacyEl = document.querySelector('input[name="smmPrivacy"]:checked');
+    const smmPrivacy = privacyEl ? privacyEl.value : 'public';
 
     // Resolve admin name + move target
     let adminName       = '';
@@ -957,7 +1451,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       const res = await fetch('/api/tree/' + encodeURIComponent(treeRoot) + '/node', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parentId, label: name, adminName, micDefault: micPerm, camDefault: camPerm })
+        body: JSON.stringify({ parentId, label: name, adminName, micDefault: micPerm, camDefault: camPerm, privacy: smmPrivacy })
       });
       if (!res.ok) throw new Error('server ' + res.status);
       const data = await res.json();
@@ -1488,12 +1982,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const m = document.getElementById('moreMenu');
     m.style.display = m.style.display === 'none' ? 'block' : 'none';
   }
-  function toggleVirtualBackground() { showToast('Virtual background coming soon', 'info'); }
-  function toggleNoiseSuppression()  { showToast('Noise suppression toggled', 'success'); }
-  function toggleWhiteboard()        { showToast('Whiteboard coming soon', 'info'); }
-  function showStats()               { showToast('Latency: 42ms · Packet loss: 0%', 'info'); }
-  function showSettings()            { showToast('Settings panel coming soon', 'info'); }
-  function showInfo()                { showInviteModal(); }
+  function toggleWhiteboard() { showToast('Whiteboard coming soon', 'info'); }
+  function showInfo()         { showInfoModal(); }
 
   // ── Invite / share link ───────────────────────────────────────────────────
   function getRoomLink() { return window.location.origin + '/room/' + activeRoomId; }
@@ -1604,6 +2094,147 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
   function showAudioMenu() { showToast('Audio device selection coming soon', 'info'); }
   function showVideoMenu() { showToast('Video device selection coming soon', 'info'); }
+
+  // ── Meeting Info modal ────────────────────────────────────────────────────
+  function showInfoModal() {
+    // Populate room ID
+    document.getElementById('infoRoomId').textContent = activeRoomId;
+    document.getElementById('infoModalSubtitle').textContent = isAdmin ? 'Admin controls' : 'Room details';
+
+    if (isAdmin) {
+      // Admin: show radio toggle, hide badge
+      document.getElementById('infoPrivacyToggle').style.display = '';
+      document.getElementById('infoPrivacyBadge').style.display = 'none';
+      // Sync radios to current state
+      document.querySelectorAll('input[name="infoPrivacy"]').forEach(function(el) {
+        el.checked = el.value === currentPrivacy;
+      });
+      syncPrivacyLabels('info');
+    } else {
+      // Non-admin: show read-only badge
+      document.getElementById('infoPrivacyToggle').style.display = 'none';
+      var badge = document.getElementById('infoPrivacyBadge');
+      badge.style.display = '';
+      if (currentPrivacy === 'private') {
+        badge.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:4px"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Private';
+        badge.style.background = 'rgba(209,80,0,.15)';
+        badge.style.color = '#ff7b2e';
+        badge.style.border = '1px solid rgba(209,80,0,.3)';
+      } else {
+        badge.innerHTML = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>Public';
+        badge.style.background = 'rgba(16,185,129,.12)';
+        badge.style.color = '#10B981';
+        badge.style.border = '1px solid rgba(16,185,129,.25)';
+      }
+    }
+
+    document.getElementById('infoModal').classList.add('open');
+  }
+  function closeInfoModal() { document.getElementById('infoModal').classList.remove('open'); }
+  document.getElementById('infoModal').addEventListener('click', function(e) {
+    if (e.target === document.getElementById('infoModal')) closeInfoModal();
+  });
+
+  // Keep label card highlighted based on selected radio
+  function syncPrivacyLabels(prefix) {
+    var pubLabel  = document.getElementById(prefix + 'PublicLabel');
+    var privLabel = document.getElementById(prefix + 'PrivateLabel');
+    if (!pubLabel || !privLabel) return;
+    var checkedEl = document.querySelector('input[name="' + prefix + 'Privacy"]:checked');
+    var isPrivate = checkedEl ? checkedEl.value === 'private' : currentPrivacy === 'private';
+    pubLabel.style.borderColor  = isPrivate ? 'rgba(255,255,255,.08)' : '#D15000';
+    pubLabel.style.background   = isPrivate ? 'transparent' : 'rgba(209,80,0,.08)';
+    privLabel.style.borderColor = isPrivate ? '#D15000' : 'rgba(255,255,255,.08)';
+    privLabel.style.background  = isPrivate ? 'rgba(209,80,0,.08)' : 'transparent';
+  }
+
+  // Listen for radio changes to update label highlights live
+  document.querySelectorAll('input[name="infoPrivacy"]').forEach(function(el) {
+    el.addEventListener('change', function() { syncPrivacyLabels('info'); });
+  });
+  document.querySelectorAll('input[name="settingsPrivacy"]').forEach(function(el) {
+    el.addEventListener('change', function() { syncPrivacyLabels('settings'); });
+  });
+
+  async function saveInfoPrivacy() {
+    var selected = document.querySelector('input[name="infoPrivacy"]:checked');
+    if (!selected) return;
+    var btn = document.getElementById('infoSavePrivacy');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await changePrivacy(selected.value);
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    closeInfoModal();
+  }
+
+  // ── Meeting Settings modal ────────────────────────────────────────────────
+  function openSettings() {
+    if (!isAdmin) { showToast('Only the meeting admin can change settings', 'info'); return; }
+    // Sync radios
+    document.querySelectorAll('input[name="settingsPrivacy"]').forEach(function(el) {
+      el.checked = el.value === currentPrivacy;
+    });
+    syncPrivacyLabels('settings');
+    document.getElementById('settingsModal').classList.add('open');
+  }
+  function closeSettingsModal() { document.getElementById('settingsModal').classList.remove('open'); }
+  document.getElementById('settingsModal').addEventListener('click', function(e) {
+    if (e.target === document.getElementById('settingsModal')) closeSettingsModal();
+  });
+
+  async function saveSettingsPrivacy() {
+    var selected = document.querySelector('input[name="settingsPrivacy"]:checked');
+    if (!selected) return;
+    var btn = document.getElementById('settingsSavePrivacy');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await changePrivacy(selected.value);
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    closeSettingsModal();
+  }
+
+  // ── Live privacy change ───────────────────────────────────────────────────
+  async function changePrivacy(newPrivacy) {
+    if (newPrivacy === currentPrivacy) return;
+    try {
+      var res = await fetch(
+        '/api/meetings/' + encodeURIComponent(activeRoomId) + '/privacy',
+        { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ privacy: newPrivacy }) }
+      );
+      if (!res.ok) {
+        var d = await res.json().catch(function() { return {}; });
+        showToast('Could not update privacy: ' + (d.error || 'Server error'), 'error');
+        return;
+      }
+      currentPrivacy = newPrivacy;
+      applyPrivacyUI();
+      showToast(newPrivacy === 'private' ? '🔒 Meeting is now Private' : '🌐 Meeting is now Public', 'success');
+    } catch (e) {
+      showToast('Could not update privacy', 'error');
+    }
+  }
+
+  function applyPrivacyUI() {
+    var isNowPrivate = currentPrivacy === 'private';
+    // Show / hide waiting button
+    var waitingCtrl = document.getElementById('waitingCtrlGroup');
+    if (waitingCtrl) waitingCtrl.style.display = isNowPrivate && isAdmin ? '' : 'none';
+    // Start / stop waiting poll
+    if (isNowPrivate && isAdmin) {
+      startWaitingPoll();
+    } else if (isAdmin) {
+      stopWaitingPoll();
+      // Also hide the waiting panel if open
+      document.getElementById('waitingPanel').style.display = 'none';
+      document.getElementById('waitingBtn') && document.getElementById('waitingBtn').classList.remove('active');
+      waitingPanelOpen = false;
+    }
+    // Sync both sets of radios to new state
+    document.querySelectorAll('input[name="infoPrivacy"], input[name="settingsPrivacy"]').forEach(function(el) {
+      el.checked = el.value === currentPrivacy;
+    });
+    syncPrivacyLabels('info');
+    syncPrivacyLabels('settings');
+  }
 
   // ── Leave ─────────────────────────────────────────────────────────────────
   function leaveRoom() {

@@ -266,6 +266,25 @@ export function homePage(user: { name: string; email: string }): string {
       <label class="form-label">Your Display Name</label>
       <input class="form-input" id="newUserName" placeholder="e.g. Taha Sadikot" value="${safeName}" />
     </div>
+    <div class="form-group">
+      <label class="form-label">Meeting Privacy</label>
+      <div style="display:flex;gap:16px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--foreground)">
+          <input type="radio" name="startPrivacy" value="public" checked style="accent-color:var(--primary)" />
+          <span>
+            <strong>Public</strong>
+            <span style="font-size:12px;color:var(--muted-fg);display:block">Anyone with the link joins directly</span>
+          </span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;color:var(--foreground)">
+          <input type="radio" name="startPrivacy" value="private" style="accent-color:var(--primary)" />
+          <span>
+            <strong>Private</strong>
+            <span style="font-size:12px;color:var(--muted-fg);display:block">You admit each person manually</span>
+          </span>
+        </label>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeStartModal()">Cancel</button>
       <button class="btn btn-primary" onclick="startMeeting()">
@@ -318,6 +337,8 @@ export function homePage(user: { name: string; email: string }): string {
   async function startMeeting() {
     const rawName  = document.getElementById('newRoomName').value.trim();
     const userName = document.getElementById('newUserName').value.trim() || ${JSON.stringify(safeName)};
+    const privacyEl = document.querySelector('input[name="startPrivacy"]:checked');
+    const privacy  = privacyEl ? privacyEl.value : 'public';
     if (!rawName) return showToast('Please enter a meeting name', 'error');
     const btn = document.querySelector('#startModal .btn-primary');
     btn.disabled = true; btn.textContent = 'Creating…';
@@ -325,7 +346,7 @@ export function homePage(user: { name: string; email: string }): string {
       const res = await fetch('/api/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: rawName, adminName: userName })
+        body: JSON.stringify({ label: rawName, adminName: userName, privacy })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error');
