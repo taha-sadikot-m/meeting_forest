@@ -296,6 +296,7 @@ export function invitationsPage(user: { name: string; email: string }): string {
 
   loadInvitations();
 </script>
+<script src="/public/ring-notifier.js?v=5"></script>
 </body>
 </html>`;
 }

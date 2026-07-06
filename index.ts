@@ -71,14 +71,77 @@ setInterval(() => {
   });
 }, 5 * 60 * 1000);
 
+// ── Active sessions (in-memory, for @ring validation) ─────────────────────────
+// Tracks who is currently joined in each meeting room
+interface ActiveSession {
+  name:     string;
+  lastSeen: number;
+}
+const SESSION_TTL_MS = 90_000; // 90 s without heartbeat → not in meeting
+const activeSessions = new Map<string, Map<string, ActiveSession>>(); // meetingId → Map<email, session>
+
+function pruneStaleSessions(roomSessions: Map<string, ActiveSession>) {
+  const cutoff = Date.now() - SESSION_TTL_MS;
+  roomSessions.forEach((entry, email) => {
+    if (entry.lastSeen < cutoff) roomSessions.delete(email);
+  });
+}
+
+function isSessionActive(roomSessions: Map<string, ActiveSession> | undefined, email: string): boolean {
+  if (!roomSessions) return false;
+  const entry = roomSessions.get(email);
+  if (!entry) return false;
+  if (Date.now() - entry.lastSeen > SESSION_TTL_MS) {
+    roomSessions.delete(email);
+    return false;
+  }
+  return true;
+}
+
+// ── Ring system (in-memory) ───────────────────────────────────────────────────
+interface RingEntry {
+  ringId:       string;
+  fromEmail:    string;
+  fromName:     string;
+  toEmail:      string;
+  toName:       string;
+  meetingId:    string;
+  meetingLabel: string;
+  startedAt:    number;
+  status:       "ringing" | "accepted" | "rejected" | "expired";
+}
+// One ring per target email (most recent wins); also indexed by ringId
+const ringsById    = new Map<string, RingEntry>();
+const ringsByEmail = new Map<string, RingEntry>(); // targetEmail → ring
+
+// Auto-expire rings older than 2 min every 30s
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 1000;
+  ringsById.forEach((r, id) => {
+    if (r.status === "ringing" && r.startedAt < cutoff) {
+      r.status = "expired";
+      ringsByEmail.delete(r.toEmail);
+    }
+  });
+  // Clean up fully resolved/expired rings older than 5 min
+  const stale = Date.now() - 5 * 60 * 1000;
+  ringsById.forEach((r, id) => {
+    if (r.status !== "ringing" && r.startedAt < stale) ringsById.delete(id);
+  });
+}, 30 * 1000);
+
 function generateId(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
     + "-" + Date.now().toString(36);
 }
 
+function normEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 // ── Static / helpers ──────────────────────────────────────────────────────────
 const MIME: Record<string, string> = {
-  ".css": "text/css", ".js": "text/javascript",
+  ".css": "text/css", ".js": "text/javascript", ".html": "text/html",
   ".png": "image/png", ".jpg": "image/jpeg",
   ".svg": "image/svg+xml", ".ico": "image/x-icon", ".woff2": "font/woff2",
 };
@@ -519,23 +582,156 @@ serve({
           "ON MATCH  SET r.leftAt = null, r.joinedAt = $now, r.role = $role",
           { email: session.email, mid, role, now }
         );
+        // Track in activeSessions for @ring validation
+        if (!activeSessions.has(mid)) activeSessions.set(mid, new Map());
+        activeSessions.get(mid)!.set(normEmail(session.email), { name, lastSeen: now });
         return json({ ok: true, role });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
     const leaveMatch = path.match(/^\/api\/meetings\/([^/]+)\/leave$/);
     if (leaveMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
       const mid = decodeURIComponent(leaveMatch[1]);
       try {
-        const b    = await req.json() as { name?: string };
-        const name = (b.name || "").trim();
-        if (!name) return json({ error: "name required" }, 400);
         await runQuery(
-          "MATCH (u:User {name: $name})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) SET r.leftAt = $now",
-          { name, mid, now: Date.now() }
+          "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) SET r.leftAt = $now",
+          { email: session.email, mid, now: Date.now() }
         );
+        // Remove from activeSessions
+        activeSessions.get(mid)?.delete(normEmail(session.email));
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const heartbeatMatch = path.match(/^\/api\/meetings\/([^/]+)\/heartbeat$/);
+    if (heartbeatMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid   = decodeURIComponent(heartbeatMatch[1]);
+      const email = normEmail(session.email);
+      const roomSessions = activeSessions.get(mid);
+      const entry = roomSessions?.get(email);
+      if (!entry) return json({ error: "Not in meeting" }, 404);
+      entry.lastSeen = Date.now();
+      return json({ ok: true });
+    }
+
+    // ── Ring endpoints ────────────────────────────────────────────────────────
+
+    // POST /api/rings — create a ring (caller must be in the meeting)
+    if (path === "/api/rings" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json() as { targetEmail?: string; meetingId?: string; meetingLabel?: string };
+        const targetEmail  = normEmail(b.targetEmail || "");
+        const meetingId    = (b.meetingId    || "").trim();
+        const meetingLabel = (b.meetingLabel || meetingId).trim();
+        const callerEmail  = normEmail(session.email);
+        if (!targetEmail || !targetEmail.includes("@")) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 400, reason: "invalid email" });
+          return json({ error: "Valid email required" }, 400);
+        }
+        if (!meetingId) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 400, reason: "missing meetingId" });
+          return json({ error: "meetingId required" }, 400);
+        }
+
+        const roomSessions = activeSessions.get(meetingId);
+        if (roomSessions) pruneStaleSessions(roomSessions);
+        if (!isSessionActive(roomSessions, callerEmail)) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 403, reason: "caller not in meeting" });
+          return json({ error: "You must join the meeting before ringing someone" }, 403);
+        }
+
+        // 1. Verify target email is registered
+        const userRows = await runQuery(
+          "MATCH (u:User {email: $email}) RETURN u.name AS name",
+          { email: targetEmail }
+        );
+        if (userRows.length === 0) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 404, reason: "no account" });
+          return json({ error: "No account found for that email" }, 404);
+        }
+        const toName = (userRows[0].get("name") as string) || targetEmail;
+
+        // 2. Check target is NOT already in the meeting
+        if (isSessionActive(roomSessions, targetEmail)) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 409, reason: "target already in meeting" });
+          return json({ error: "That person is already in the meeting" }, 409);
+        }
+
+        // 3. Create ring entry (replaces any existing ring for this target)
+        const existing = ringsByEmail.get(targetEmail);
+        if (existing) { existing.status = "expired"; ringsById.delete(existing.ringId); }
+
+        const ringId: string = "ring-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
+        const ring: RingEntry = {
+          ringId, fromEmail: callerEmail, fromName: session.name || session.email,
+          toEmail: targetEmail, toName, meetingId, meetingLabel,
+          startedAt: Date.now(), status: "ringing",
+        };
+        ringsById.set(ringId, ring);
+        ringsByEmail.set(targetEmail, ring);
+        console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 200, ringId, toName });
+        return json({ ringId, toName });
+      } catch (e) {
+        console.log("[ring-api] create", { status: 500, error: String(e) });
+        return json({ error: String(e) }, 500);
+      }
+    }
+
+    // GET /api/rings/incoming — target polls to check for an incoming ring
+    if (path === "/api/rings/incoming" && req.method === "GET") {
+      if (!session) return json({ ring: null });
+      const ring = ringsByEmail.get(normEmail(session.email));
+      if (!ring || ring.status !== "ringing") return json({ ring: null });
+      // Check expiry
+      if (Date.now() - ring.startedAt > 2 * 60 * 1000) {
+        ring.status = "expired"; ringsByEmail.delete(normEmail(session.email));
+        return json({ ring: null });
+      }
+      return json({
+        ring: {
+          ringId:       ring.ringId,
+          fromName:     ring.fromName,
+          fromEmail:    ring.fromEmail,
+          meetingId:    ring.meetingId,
+          meetingLabel: ring.meetingLabel,
+          startedAt:    ring.startedAt,
+        }
+      });
+    }
+
+    // POST /api/rings/:id/respond — accept or reject a ring
+    const ringRespondMatch = path.match(/^\/api\/rings\/([^/]+)\/respond$/);
+    if (ringRespondMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const ringId = ringRespondMatch[1];
+      const ring   = ringsById.get(ringId);
+      if (!ring) return json({ error: "Ring not found" }, 404);
+      if (ring.toEmail !== normEmail(session.email)) return json({ error: "Forbidden" }, 403);
+      try {
+        const b = await req.json() as { action?: string };
+        const action = b.action; // "accept" | "reject"
+        if (action !== "accept" && action !== "reject") return json({ error: "action must be accept or reject" }, 400);
+        ring.status = action === "accept" ? "accepted" : "rejected";
+        ringsByEmail.delete(normEmail(session.email));
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // GET /api/rings/:id/status — caller polls to see if ring was answered
+    const ringStatusMatch = path.match(/^\/api\/rings\/([^/]+)\/status$/);
+    if (ringStatusMatch && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const ringId = ringStatusMatch[1];
+      const ring   = ringsById.get(ringId);
+      if (!ring) return json({ status: "expired" });
+      // Auto-expire after 2 min
+      if (ring.status === "ringing" && Date.now() - ring.startedAt > 2 * 60 * 1000) {
+        ring.status = "expired"; ringsByEmail.delete(ring.toEmail);
+      }
+      return json({ status: ring.status, toName: ring.toName });
     }
 
     // POST /api/meetings/:id/invite — send email invite to external person

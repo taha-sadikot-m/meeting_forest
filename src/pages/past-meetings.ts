@@ -319,6 +319,7 @@ export function pastMeetingsPage(user: { name: string; email: string }): string 
 
   loadPastMeetings();
 </script>
+<script src="/public/ring-notifier.js?v=5"></script>
 </body>
 </html>`;
 }

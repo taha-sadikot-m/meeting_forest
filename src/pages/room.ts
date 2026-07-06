@@ -7,6 +7,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   const isPrivateMeeting = meetingPrivacy === 'private';
   const preAdmitted      = serverPreAdmitted !== false;  // true unless explicitly false
   const userInitial      = (user?.name?.[0] || '?').toUpperCase();
+  const userEmail        = user?.email || '';
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -172,9 +173,23 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <div class="chat-messages" id="chatMessages">
         <div class="chat-msg-system">Meeting started — ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}</div>
       </div>
-      <div class="chat-input-area">
+      <div class="chat-input-area" style="position:relative">
+        <!-- @ring command dropdown -->
+        <div id="ringCmdDropdown" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:50">
+          <div id="ringCmdOption" onclick="selectRingCmd()" style="display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;transition:background .15s" onmouseenter="this.style.background='rgba(209,80,0,.12)'" onmouseleave="this.style.background='transparent'">
+            <div style="width:34px;height:34px;border-radius:9px;background:rgba(209,80,0,.15);border:1px solid rgba(209,80,0,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.47 2 2 0 0 1 3.58 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.8a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16.92z"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.9)">@ring</div>
+              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:1px">Call someone to join this meeting</div>
+            </div>
+          </div>
+        </div>
         <div class="chat-input-wrap">
-          <input class="chat-input" id="chatInput" placeholder="Message everyone…" onkeydown="handleChatKey(event)" />
+          <input class="chat-input" id="chatInput" placeholder="Message everyone… (type @ for commands)" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
           <button class="chat-emoji-btn" onclick="addEmoji()">😊</button>
         </div>
         <button class="chat-send-btn" onclick="sendChat()">
@@ -917,26 +932,67 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
 <script src="/public/tree.js"></script>
 <script>
-  const ROOM_ID              = '${safeRoomId}';
-  let currentPrivacy         = '${isPrivateMeeting ? "private" : "public"}';
+  const ROOM_ID              = ${JSON.stringify(safeRoomId)};
+  let currentPrivacy         = ${JSON.stringify(isPrivateMeeting ? 'private' : 'public')};
   const SERVER_PRE_ADMITTED  = ${preAdmitted};
   const USER_INITIAL         = ${JSON.stringify(userInitial)};
+  const USER_EMAIL           = ${JSON.stringify(userEmail)};
   const urlParams            = new URLSearchParams(location.search);
-  let userName           = urlParams.get('name') || '${prefillName}';
+  let userName           = urlParams.get('name') || ${JSON.stringify(prefillName)};
   // Server-injected role takes precedence (set when server verifies user is meeting creator)
-  const _serverRole = '${injectedRole}';
+  const _serverRole = ${JSON.stringify(injectedRole)};
   const userRole  = _serverRole || urlParams.get('role') || 'participant'; // 'superadmin' | 'admin' | 'participant'
   const isAdmin   = userRole === 'superadmin' || userRole === 'admin';
   const treeRoot  = urlParams.get('treeRoot') || ROOM_ID;
   const viewAsId  = urlParams.get('viewAs')   || (userRole === 'admin' ? ROOM_ID : null);
 
+  // If joined via @ring, start with mic+cam muted
+  const _joinedMuted = urlParams.get('joined_muted') === 'true';
+
   let livekitRoom = null;
   let activeRoomId = ROOM_ID;   // tracks which sub-meeting the user is currently in
   let _roomSwitching = false;   // true while intentionally switching rooms (suppresses Disconnected redirect)
-  let micEnabled = true, camEnabled = true, sharing = false;
+  let micEnabled = !_joinedMuted, camEnabled = !_joinedMuted, sharing = false;
   let panelOpen = false, currentPanel = 'chat';
   let localStream = null, lobbyStream = null;
   let treeInitialized = false;
+  let hasJoinedMeeting = false;
+  let heartbeatInterval = null;
+
+  function startMeetingHeartbeat() {
+    stopMeetingHeartbeat();
+    heartbeatInterval = setInterval(function() {
+      fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(function() {});
+    }, 30000);
+  }
+
+  function stopMeetingHeartbeat() {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  }
+
+  function recordLeaveKeepalive() {
+    if (!hasJoinedMeeting || !userName) return;
+    hasJoinedMeeting = false;
+    stopMeetingHeartbeat();
+    fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/leave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: userName }),
+      keepalive: true
+    }).catch(function() {});
+  }
+
+  window.addEventListener('pagehide', function() {
+    recordLeaveKeepalive();
+  });
+
+  console.log('[@ring] room script ready', { USER_EMAIL, ROOM_ID, activeRoomId });
 
   // ── Role-based UI setup ───────────────────────────────────────────────────
   if (isAdmin) {
@@ -956,6 +1012,12 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const badge = document.getElementById('lobbyRoleBadge');
     badge.style.display = '';
     badge.querySelector('span').textContent = '👑 Meeting Admin';
+  }
+
+  // If joined via @ring, reflect muted state on lobby buttons immediately
+  if (_joinedMuted) {
+    document.getElementById('lobbyMicBtn').classList.add('off');
+    document.getElementById('lobbyCamBtn').classList.add('off');
   }
 
   // Pre-fill lobby name, link, and join button text
@@ -988,6 +1050,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
   }
   startLobbyPreview();
+  // Recalculate layout on window resize (tile sizes depend on available area)
+  window.addEventListener('resize', function() { updateLayout(); });
 
   function toggleLobbyMic() {
     if (lobbyStream) {
@@ -1016,17 +1080,27 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     // Render self in participants list
     addParticipantRow(userName, true);
     // Record join in Memgraph
-    fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: userName, role: userRole })
-    }).catch(() => {});
+    try {
+      const joinRes = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: userName, role: userRole })
+      });
+      if (!joinRes.ok) {
+        const joinData = await joinRes.json().catch(function() { return {}; });
+        showToast(joinData.error || 'Could not register join with server', 'error');
+      }
+    } catch (e) {
+      showToast('Could not register join with server', 'error');
+    }
     await initLocalMedia();
     await connectToLiveKit();
     // Init tree for admins
     if (isAdmin) initTree();
     // Start polling waiting users for admin of private meetings
     if (currentPrivacy === 'private') startWaitingPoll();
+    hasJoinedMeeting = true;
+    startMeetingHeartbeat();
   }
 
   // ── Lobby state machine (Google Meet-style) ───────────────────────────────
@@ -1170,6 +1244,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (nodeId === activeRoomId) return; // already here
 
     // 1. Record leave in Memgraph for old room (fire-and-forget)
+    stopMeetingHeartbeat();
     fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/leave', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: userName })
@@ -1211,10 +1286,21 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
 
     // 5. Record join in new room
-    fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: userName, role: 'superadmin' })
-    }).catch(() => {});
+    try {
+      const joinRes = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: userName, role: 'superadmin' })
+      });
+      if (!joinRes.ok) {
+        const joinData = await joinRes.json().catch(function() { return {}; });
+        showToast(joinData.error || 'Could not register join with server', 'error');
+      }
+    } catch (e) {
+      showToast('Could not register join with server', 'error');
+    }
+    hasJoinedMeeting = true;
+    startMeetingHeartbeat();
 
     // 6. Connect to new LiveKit room
     showToast('Switching to ' + nodeId + '…', 'info');
@@ -1655,12 +1741,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         .on(RoomEvent.DataReceived, (data) => { handleDataMessage(data); })
         .on(RoomEvent.Disconnected, () => {
           if (_roomSwitching) return; // intentional switch — don't redirect
+          recordLeaveKeepalive();
           showToast('Disconnected from room', 'error');
           setTimeout(() => window.location.href = '/', 2000);
         });
       await livekitRoom.connect(url, token);
-      await livekitRoom.localParticipant.setMicrophoneEnabled(true);
-      await livekitRoom.localParticipant.setCameraEnabled(true);
+      await livekitRoom.localParticipant.setMicrophoneEnabled(micEnabled);
+      await livekitRoom.localParticipant.setCameraEnabled(camEnabled);
       showToast('Connected to ' + activeRoomId, 'success');
       updateParticipantCount();
     } catch(e) {
@@ -1679,7 +1766,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       label.textContent = (participant.name || participant.identity) + ' is sharing their screen';
       area.style.display = 'flex';
       area.style.flexDirection = 'column';
-      document.getElementById('videoArea').classList.add('screen-sharing');
+      updateLayout();
       return;
     }
     // Camera / audio track — attach to participant's tile
@@ -1705,7 +1792,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       const vid  = document.getElementById('remoteScreenVideo');
       area.style.display = 'none';
       vid.srcObject = null;
-      document.getElementById('videoArea').classList.remove('screen-sharing');
+      updateLayout();
       return;
     }
     const identity = participant ? participant.identity : track;
@@ -1718,7 +1805,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   function removeParticipantTile(identity) {
     const tile = document.getElementById('tile-' + identity);
     if (tile) tile.remove();
-    updateGridLayout();
+    updateLayout();
   }
   function createParticipantTile(participant) {
     const grid = document.getElementById('videoGrid');
@@ -1735,7 +1822,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       </div>
       <div class="speaking-ring"></div>\`;
     grid.appendChild(div);
-    updateGridLayout();
+    updateLayout();
     return div;
   }
   function updateSpeakers(speakers) {
@@ -1745,11 +1832,44 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       if (tile) tile.querySelector('.speaking-ring')?.classList.add('active');
     });
   }
+
+  function updateLayout() {
+    const area  = document.getElementById('videoArea');
+    const grid  = document.getElementById('videoGrid');
+    const remote = document.getElementById('remoteScreenArea');
+    const isPresenting = sharing ||
+      (remote && remote.style.display && remote.style.display !== 'none');
+    area.classList.toggle('presenting', !!isPresenting);
+
+    const tiles = document.querySelectorAll('.video-tile');
+    const n = tiles.length;
+
+    if (isPresenting) {
+      const tileH = 110;
+      const cols  = n <= 2 ? 1 : 2;
+      grid.style.flex = '0 0 auto';
+      grid.style.width = (cols * 160 + 6) + 'px';
+      grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+      grid.style.gridAutoRows = tileH + 'px';
+      grid.style.maxHeight = '100%';
+    } else {
+      grid.style.width = '';
+      grid.style.flex = '';
+      grid.style.gridAutoRows = '';
+      grid.style.maxHeight = '';
+      if      (n <= 1) grid.style.gridTemplateColumns = '1fr';
+      else if (n <= 2) grid.style.gridTemplateColumns = '1fr 1fr';
+      else if (n <= 4) grid.style.gridTemplateColumns = '1fr 1fr';
+      else if (n <= 6) grid.style.gridTemplateColumns = 'repeat(3,1fr)';
+      else             grid.style.gridTemplateColumns = 'repeat(4,1fr)';
+    }
+  }
+
   /** Add a row to the People panel participants list */
   function addParticipantRow(name, isSelf) {
     const list = document.getElementById('participantsList');
     if (!list) return;
-    if (document.getElementById('pr-' + name)) return; // already exists
+    if (document.getElementById('pr-' + name)) return;
     const colors = ['#7C3AED','#059669','#0284C7','#D97706','#DB2777','#D15000'];
     const color  = colors[name.charCodeAt(0) % colors.length];
     const div = document.createElement('div');
@@ -1781,16 +1901,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const badge = document.getElementById('peopleTabBadge');
     if (badge) badge.textContent = count;
   }
-  function updateGridLayout() {
-    const tiles = document.querySelectorAll('.video-tile');
-    const grid  = document.getElementById('videoGrid');
-    const n     = tiles.length;
-    if      (n <= 1) grid.style.gridTemplateColumns = '1fr';
-    else if (n <= 2) grid.style.gridTemplateColumns = '1fr 1fr';
-    else if (n <= 4) grid.style.gridTemplateColumns = '1fr 1fr';
-    else if (n <= 6) grid.style.gridTemplateColumns = 'repeat(3,1fr)';
-    else             grid.style.gridTemplateColumns = 'repeat(4,1fr)';
-  }
 
   // ── Controls ──────────────────────────────────────────────────────────────
   function toggleMic() {
@@ -1818,17 +1928,15 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (!sharing) {
       if (!livekitRoom) { showToast('Not connected to room', 'error'); return; }
       try {
-        // Let LiveKit call getDisplayMedia internally and publish the track.
-        // Do NOT call getDisplayMedia separately — that causes a double screen-picker.
         const pub = await livekitRoom.localParticipant.setScreenShareEnabled(true);
         if (!pub) { showToast('Screen share cancelled', 'info'); return; }
         sharing = true;
         document.getElementById('shareBtn').classList.add('active');
-        document.getElementById('screenShareOverlay').style.display = 'flex';
-        // Mirror LiveKit's captured track into local preview (no second capture needed)
+        const overlay = document.getElementById('screenShareOverlay');
+        overlay.style.display = 'flex';
+        updateLayout();
         if (pub.track && pub.track.mediaStreamTrack) {
           document.getElementById('screenVideo').srcObject = new MediaStream([pub.track.mediaStreamTrack]);
-          // Auto-stop when user clicks the browser's native "Stop sharing" button
           pub.track.mediaStreamTrack.onended = stopScreenShare;
         }
         showToast('Screen sharing started', 'success');
@@ -1843,10 +1951,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   function stopScreenShare() {
     sharing = false;
     document.getElementById('shareBtn').classList.remove('active');
-    document.getElementById('screenShareOverlay').style.display = 'none';
+    const overlay = document.getElementById('screenShareOverlay');
+    overlay.style.position = '';
+    overlay.style.display = 'none';
     const vid = document.getElementById('screenVideo');
     if (vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); vid.srcObject = null; }
     if (livekitRoom) livekitRoom.localParticipant.setScreenShareEnabled(false);
+    updateLayout();
     showToast('Screen sharing stopped');
   }
 
@@ -1866,6 +1977,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
     document.getElementById('chatToggleBtn').classList.toggle('active', panelOpen && currentPanel === 'chat');
     document.getElementById('peopleToggleBtn').classList.toggle('active', panelOpen && currentPanel === 'participants');
+    setTimeout(updateLayout, 50);
   }
   function switchPanel(type) {
     currentPanel = type;
@@ -1879,11 +1991,210 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   // ── Chat ──────────────────────────────────────────────────────────────────
-  function handleChatKey(e) { if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } }
+  function handleChatKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      console.log('[@ring] Enter pressed, calling sendChat');
+      sendChat();
+    }
+  }
+
+  function handleChatInput(e) {
+    const val = e.target.value;
+    const drop = document.getElementById('ringCmdDropdown');
+    if (val === '@') {
+      drop.style.display = 'block';
+    } else {
+      drop.style.display = 'none';
+    }
+  }
+
+  function selectRingCmd() {
+    document.getElementById('chatInput').value = '@ring ';
+    document.getElementById('ringCmdDropdown').style.display = 'none';
+    document.getElementById('chatInput').focus();
+  }
+
+  function openChatPanel() {
+    const panel  = document.getElementById('roomPanel');
+    const layout = document.getElementById('roomLayout');
+    if (!panelOpen || currentPanel !== 'chat') {
+      panel.style.display = 'flex';
+      layout.classList.add('panel-open');
+      panelOpen = true;
+      switchPanel('chat');
+      document.getElementById('chatToggleBtn').classList.toggle('active', true);
+      document.getElementById('peopleToggleBtn').classList.toggle('active', false);
+      setTimeout(updateLayout, 50);
+    }
+  }
+
+  function ringStatusIcon(kind) {
+    var stroke = '#D15000';
+    if (kind === 'success') stroke = '#10B981';
+    else if (kind === 'error') stroke = '#EF4444';
+    else if (kind === 'muted') stroke = 'rgba(255,255,255,.5)';
+    var paths = {
+      ringing: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.47 2 2 0 0 1 3.58 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.8a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16.92z"/>',
+      success: '<polyline points="20 6 9 17 4 12"/>',
+      declined: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+      expired: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+      warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'
+    };
+    return '<span class="ring-status-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="' + stroke + '" stroke-width="2.5">' + (paths[kind] || paths.warning) + '</svg></span>';
+  }
+
+  function addSystemMessage(html, isRing) {
+    console.log('[@ring] UI feedback addSystemMessage', isRing ? '(ring)' : '', String(html).slice(0, 80));
+    openChatPanel();
+    const container = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    div.className = 'chat-msg-system' + (isRing ? ' ring-status' : '');
+    div.innerHTML = html;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    const notif = document.getElementById('chatNotif');
+    if (notif) notif.style.display = 'none';
+  }
+
+  async function ensureJoined() {
+    const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: userName, role: userRole })
+    });
+    const data = await res.json().catch(function() { return {}; });
+    console.log('[@ring] ensureJoined status=' + res.status, data);
+    if (!res.ok) console.warn('[@ring] ensureJoined failed', res.status, data);
+    return res.ok;
+  }
+
+  function playOutgoingRingTone() {
+    if (typeof window.playMFOutgoingRing === 'function') {
+      window.playMFOutgoingRing();
+    }
+  }
+
+  async function sendRing(email) {
+    console.log('[@ring] sendRing start', { email, USER_EMAIL, activeRoomId });
+    const target = email.trim().toLowerCase();
+    if (target === USER_EMAIL.toLowerCase()) {
+      console.log('[@ring] self-ring blocked');
+      const msg = 'Cannot ring yourself while you are in the meeting.';
+      addSystemMessage(ringStatusIcon('warning') + ' ' + msg, true);
+      showToast('You are already in this meeting — use another account to test @ring', 'info');
+      return;
+    }
+    try {
+      openChatPanel();
+      const joined = await ensureJoined();
+      if (!joined) {
+        const errMsg = 'Could not register join with server — try rejoining the meeting';
+        addSystemMessage(ringStatusIcon('warning') + ' ' + escapeHtml(errMsg), true);
+        showToast(errMsg, 'error');
+        return;
+      }
+      let res = await fetch('/api/rings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetEmail: target, meetingId: activeRoomId })
+      });
+      let data = await res.json();
+      console.log('[@ring] API status=' + res.status, data);
+      if (!res.ok && res.status === 403) {
+        await ensureJoined();
+        res = await fetch('/api/rings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetEmail: target, meetingId: activeRoomId })
+        });
+        data = await res.json();
+        console.log('[@ring] API retry status=' + res.status, data);
+      }
+      if (!res.ok) {
+        const errMsg = data.error || ('Could not ring ' + email);
+        addSystemMessage(ringStatusIcon('warning') + ' ' + escapeHtml(errMsg), true);
+        showToast(errMsg, 'error');
+        return;
+      }
+      addSystemMessage(ringStatusIcon('ringing') + ' Ringing <strong>' + escapeHtml(email) + '</strong>…', true);
+      showToast('Ringing ' + (data.toName || email) + '…', 'info');
+      playOutgoingRingTone();
+      const ringId = data.ringId;
+      const pollRing = setInterval(async () => {
+        try {
+          const sr = await fetch('/api/rings/' + encodeURIComponent(ringId) + '/status');
+          const sd = await sr.json();
+          if (sd.status === 'accepted') {
+            clearInterval(pollRing);
+            const msg = (sd.toName || email) + ' joined the meeting.';
+            addSystemMessage(ringStatusIcon('success') + ' <strong>' + escapeHtml(sd.toName || email) + '</strong> joined the meeting.', true);
+            showToast(msg, 'success');
+          } else if (sd.status === 'rejected') {
+            clearInterval(pollRing);
+            const msg = (sd.toName || email) + ' declined the call.';
+            addSystemMessage(ringStatusIcon('declined') + ' <strong>' + escapeHtml(sd.toName || email) + '</strong> declined the call.', true);
+            showToast(msg, 'info');
+          } else if (sd.status === 'expired') {
+            clearInterval(pollRing);
+            const msg = (sd.toName || email) + " didn't answer.";
+            addSystemMessage(ringStatusIcon('expired') + " <strong>" + escapeHtml(sd.toName || email) + "</strong> didn't answer.", true);
+            showToast(msg, 'info');
+          }
+        } catch (e2) { clearInterval(pollRing); }
+      }, 3000);
+    } catch (e) {
+      console.error('[@ring] sendRing error', e);
+      const errMsg = 'Could not send ring: ' + e.message;
+      addSystemMessage(ringStatusIcon('warning') + ' ' + escapeHtml(errMsg), true);
+      showToast(errMsg, 'error');
+    }
+  }
+
+  function parseRingCommand(raw) {
+    var msg = raw.trim();
+    if (msg.toLowerCase().indexOf('@ring') !== 0) return null;
+    var rest = msg.substring(5);
+    var i = 0;
+    while (i < rest.length) {
+      var c = rest.charCodeAt(i);
+      if (c !== 32 && c !== 9 && c !== 10 && c !== 13) break;
+      i++;
+    }
+    var email = rest.substring(i).split(' ').join('').split('\t').join('').toLowerCase();
+    if (email.indexOf('@') < 1) return null;
+    return email;
+  }
+
   function sendChat() {
     const input = document.getElementById('chatInput');
     const msg = input.value.trim();
+    console.log('[@ring] sendChat', { msg });
     if (!msg) return;
+    openChatPanel();
+    // Handle @ring command
+    const ringEmail = parseRingCommand(msg);
+    console.log('[@ring] parseRingCommand', ringEmail, 'codes:', [...msg].map(function(c) { return c.charCodeAt(0); }));
+    const looksLikeRing = msg.trim().toLowerCase().indexOf('@ring') === 0;
+    if (looksLikeRing && !ringEmail) {
+      console.warn('[@ring] invalid format:', msg, 'codes:', [...msg].map(function(c) { return c.charCodeAt(0); }));
+      addSystemMessage(ringStatusIcon('warning') + ' Use: <strong>@ring email@example.com</strong>', true);
+      showToast('Invalid @ring format. Use: @ring email@example.com', 'error');
+      input.value = '';
+      document.getElementById('ringCmdDropdown').style.display = 'none';
+      return;
+    }
+    if (ringEmail) {
+      console.log('[@ring] matched email=' + ringEmail);
+      input.value = '';
+      document.getElementById('ringCmdDropdown').style.display = 'none';
+      showToast('Sending ring to ' + ringEmail + '…', 'info');
+      void sendRing(ringEmail).catch(function(e) {
+        console.error('[@ring] sendRing unhandled', e);
+        showToast('Ring failed: ' + e.message, 'error');
+      });
+      return;
+    }
     const container = document.getElementById('chatMessages');
     const now = new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
     const div = document.createElement('div');
@@ -1891,7 +2202,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     div.innerHTML = \`<div class="chat-msg-meta" style="justify-content:flex-end">
       <span class="chat-time">\${now}</span>
       <span class="chat-sender">You</span>
-      <span class="chat-avatar">T</span>
+      <span class="chat-avatar">\${USER_INITIAL}</span>
     </div>
     <div class="chat-bubble self-bubble">\${escapeHtml(msg)}</div>\`;
     container.appendChild(div);
@@ -1909,10 +2220,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     input.focus();
   }
   function escapeHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  // Render a chat message received from another participant
   function appendChatMessage(name, msg) {
     const container = document.getElementById('chatMessages');
     const now = new Date().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
@@ -1940,7 +2250,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     div.appendChild(bubble);
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
-    // Show unread badge if chat panel is not open
     if (!panelOpen || currentPanel !== 'chat') {
       const notif = document.getElementById('chatNotif');
       if (notif) notif.style.display = 'flex';
@@ -1952,8 +2261,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const p = document.getElementById('reactionsPicker');
     p.style.display = p.style.display === 'none' ? 'flex' : 'none';
   }
-
-  // Show floating emoji on screen (local display — called both locally and on receive)
   function showReactionOverlay(emoji) {
     const overlay = document.getElementById('reactionOverlay');
     const el = document.createElement('div');
@@ -1963,12 +2270,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     overlay.appendChild(el);
     setTimeout(() => el.remove(), 2500);
   }
-
   function sendReaction(emoji) {
     document.getElementById('reactionsPicker').style.display = 'none';
-    // Show locally immediately
     showReactionOverlay(emoji);
-    // Broadcast to all other participants via LiveKit data channel
     if (livekitRoom) {
       livekitRoom.localParticipant.publishData(
         new TextEncoder().encode(JSON.stringify({ type: 'reaction', emoji, name: userName })),
@@ -2077,7 +2381,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     a.click();
   }
 
-  // Close modals on backdrop click
   document.getElementById('inviteModal').addEventListener('click', e => {
     if (e.target === document.getElementById('inviteModal')) closeInviteModal();
   });
@@ -2097,21 +2400,17 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   // ── Meeting Info modal ────────────────────────────────────────────────────
   function showInfoModal() {
-    // Populate room ID
     document.getElementById('infoRoomId').textContent = activeRoomId;
     document.getElementById('infoModalSubtitle').textContent = isAdmin ? 'Admin controls' : 'Room details';
 
     if (isAdmin) {
-      // Admin: show radio toggle, hide badge
       document.getElementById('infoPrivacyToggle').style.display = '';
       document.getElementById('infoPrivacyBadge').style.display = 'none';
-      // Sync radios to current state
       document.querySelectorAll('input[name="infoPrivacy"]').forEach(function(el) {
         el.checked = el.value === currentPrivacy;
       });
       syncPrivacyLabels('info');
     } else {
-      // Non-admin: show read-only badge
       document.getElementById('infoPrivacyToggle').style.display = 'none';
       var badge = document.getElementById('infoPrivacyBadge');
       badge.style.display = '';
@@ -2127,7 +2426,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         badge.style.border = '1px solid rgba(16,185,129,.25)';
       }
     }
-
     document.getElementById('infoModal').classList.add('open');
   }
   function closeInfoModal() { document.getElementById('infoModal').classList.remove('open'); }
@@ -2135,7 +2433,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (e.target === document.getElementById('infoModal')) closeInfoModal();
   });
 
-  // Keep label card highlighted based on selected radio
   function syncPrivacyLabels(prefix) {
     var pubLabel  = document.getElementById(prefix + 'PublicLabel');
     var privLabel = document.getElementById(prefix + 'PrivateLabel');
@@ -2148,7 +2445,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     privLabel.style.background  = isPrivate ? 'rgba(209,80,0,.08)' : 'transparent';
   }
 
-  // Listen for radio changes to update label highlights live
   document.querySelectorAll('input[name="infoPrivacy"]').forEach(function(el) {
     el.addEventListener('change', function() { syncPrivacyLabels('info'); });
   });
@@ -2169,7 +2465,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   // ── Meeting Settings modal ────────────────────────────────────────────────
   function openSettings() {
     if (!isAdmin) { showToast('Only the meeting admin can change settings', 'info'); return; }
-    // Sync radios
     document.querySelectorAll('input[name="settingsPrivacy"]').forEach(function(el) {
       el.checked = el.value === currentPrivacy;
     });
@@ -2207,7 +2502,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       }
       currentPrivacy = newPrivacy;
       applyPrivacyUI();
-      showToast(newPrivacy === 'private' ? '🔒 Meeting is now Private' : '🌐 Meeting is now Public', 'success');
+      showToast(newPrivacy === 'private' ? 'Meeting is now Private' : 'Meeting is now Public', 'success');
     } catch (e) {
       showToast('Could not update privacy', 'error');
     }
@@ -2215,20 +2510,16 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   function applyPrivacyUI() {
     var isNowPrivate = currentPrivacy === 'private';
-    // Show / hide waiting button
     var waitingCtrl = document.getElementById('waitingCtrlGroup');
     if (waitingCtrl) waitingCtrl.style.display = isNowPrivate && isAdmin ? '' : 'none';
-    // Start / stop waiting poll
     if (isNowPrivate && isAdmin) {
       startWaitingPoll();
     } else if (isAdmin) {
       stopWaitingPoll();
-      // Also hide the waiting panel if open
       document.getElementById('waitingPanel').style.display = 'none';
       document.getElementById('waitingBtn') && document.getElementById('waitingBtn').classList.remove('active');
       waitingPanelOpen = false;
     }
-    // Sync both sets of radios to new state
     document.querySelectorAll('input[name="infoPrivacy"], input[name="settingsPrivacy"]').forEach(function(el) {
       el.checked = el.value === currentPrivacy;
     });
@@ -2238,7 +2529,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   // ── Leave ─────────────────────────────────────────────────────────────────
   function leaveRoom() {
-    // Record leave in Memgraph (fire-and-forget)
+    hasJoinedMeeting = false;
+    stopMeetingHeartbeat();
     if (userName) {
       fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/leave', {
         method: 'POST',
@@ -2255,6 +2547,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   // ── Toast ─────────────────────────────────────────────────────────────────
   function showToast(message, type = 'info') {
+    console.log('[@ring] UI feedback showToast', type, message);
     const c = document.getElementById('toastContainer');
     const t = document.createElement('div');
     t.className = 'toast ' + type;
@@ -2271,6 +2564,16 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       document.getElementById('moreMenu').style.display = 'none';
     if (!e.target.closest('#reactionsPicker') && !e.target.closest('#reactBtn'))
       document.getElementById('reactionsPicker').style.display = 'none';
+    if (!e.target.closest('#ringCmdDropdown') && !e.target.closest('#chatInput'))
+      document.getElementById('ringCmdDropdown').style.display = 'none';
+  });
+
+  // ── Global error handlers (debug @ring) ────────────────────────────────────
+  window.onerror = function(msg, src, line, col, err) {
+    console.error('[@ring] ERROR window.onerror', msg, src, line, err);
+  };
+  window.addEventListener('unhandledrejection', function(e) {
+    console.error('[@ring] ERROR unhandledrejection', e.reason);
   });
 
   // ── Audio meter (demo animation) ──────────────────────────────────────────
@@ -2289,7 +2592,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
   setInterval(animateMeter, 80);
 
-  // Simulate speaking ring
   setInterval(() => {
     const rings = document.querySelectorAll('.speaking-ring');
     rings.forEach(r => r.classList.remove('active'));
@@ -2297,6 +2599,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (active) active.classList.add('active');
   }, 3000);
 </script>
+<script src="/public/ring-notifier.js?v=5"></script>
 </body>
 </html>`;
 }

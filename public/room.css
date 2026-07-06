@@ -153,19 +153,37 @@
   min-height: 0;
 }
 
-/* ── Remote screen share layout ──────────────────────────────────────────── */
-/* When remoteScreenArea is visible, shrink the camera tiles to a bottom strip */
-.video-area.screen-sharing .video-grid {
-  flex: 0 0 auto;
-  max-height: 120px;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  grid-auto-rows: 110px;
-  overflow-x: auto;
-  overflow-y: hidden;
+/* ── Spotlight + sidebar layout (any screen share active) ─────────────────── */
+/* JS adds .presenting to .video-area when local or remote sharing is active  */
+.video-area.presenting {
+  flex-direction: row;    /* screen content left, tile sidebar right */
 }
-.video-area.screen-sharing #remoteScreenArea {
+
+/* Screen content fills the left portion */
+.video-area.presenting #remoteScreenArea {
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  margin-bottom: 0;
+  border-radius: 10px;
+}
+.video-area.presenting .screen-share-overlay {
+  /* Become a normal flex child instead of an absolute overlay */
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  z-index: auto;
+}
+
+/* Tile sidebar — JS sets exact width + grid-auto-rows via .style */
+.video-area.presenting #videoGrid {
+  flex: 0 0 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* scrollbar subtle */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,.15) transparent;
 }
 
 /* ── Video tile ───────────────────────────────────────────────────────────── */
@@ -402,13 +420,28 @@
 
 .chat-msg-system {
   text-align: center;
-  font-size: 11px;
-  color: rgba(255,255,255,.3);
-  background: rgba(255,255,255,.05);
+  font-size: 12px;
+  color: rgba(255,255,255,.75);
+  background: rgba(255,255,255,.1);
   border-radius: 20px;
-  padding: 5px 14px;
+  padding: 6px 14px;
   width: fit-content;
   margin: 0 auto;
+}
+.chat-msg-system.ring-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,.9);
+  background: rgba(209,80,0,.15);
+  border: 1px solid rgba(209,80,0,.35);
+  font-size: 13px;
+  font-weight: 600;
+}
+.ring-status-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
 }
 
 .chat-msg { display: flex; flex-direction: column; gap: 5px; }
@@ -883,6 +916,7 @@
 }
 
 /* ── Toast adjustments for dark room bg ──────────────────────────────────── */
+.room-body .toast-container { bottom: 96px; }
 .room-body .toast { font-family: 'Plus Jakarta Sans', sans-serif; }
 
 /* -- DARK-ROOM CSS VARIABLE OVERRIDES ----------------------------------- */

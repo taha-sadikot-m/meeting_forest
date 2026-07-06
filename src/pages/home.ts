@@ -469,6 +469,7 @@ export function homePage(user: { name: string; email: string }): string {
 
   loadRooms();
 </script>
+<script src="/public/ring-notifier.js?v=5"></script>
 </body>
 </html>`;
 }
