@@ -1,12 +1,13 @@
 import { serve } from "bun";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
-import { AccessToken } from "livekit-server-sdk";
-import neo4j from "neo4j-driver";
 import { homePage } from "./src/pages/home";
 import { roomPage } from "./src/pages/room";
 import { pastMeetingsPage } from "./src/pages/past-meetings";
 import { invitationsPage } from "./src/pages/invitations";
+import { aiMeetingSetupPage } from "./src/pages/ai-meeting-setup";
+import { aiRepSettingsPage } from "./src/pages/ai-rep-settings";
+import { debriefsPage } from "./src/pages/debriefs";
 import { loginPage } from "./src/pages/login";
 import { registerPage } from "./src/pages/register";
 import { forgotPasswordPage } from "./src/pages/forgot-password";
@@ -17,40 +18,29 @@ import {
   generateSecureToken, hashPassword, verifyPassword,
   sendVerificationEmail, sendResetEmail, sendMeetingInviteEmail,
 } from "./src/auth";
+import { config } from "./src/config";
+import { runQuery } from "./src/db/memgraph";
+import { generateId, createDefaultAssistant } from "./src/db/ai-queries";
+import { generateToken } from "./src/livekit/tokens";
+import {
+  createRing, normEmail, getRingById, getRingByEmail, deleteRingByEmail,
+} from "./src/rings";
+import {
+  ensureActiveSession, removeActiveSession, touchActiveSession,
+  getActiveSessions, isSessionActive, pruneStaleSessions,
+} from "./src/sessions";
+import {
+  handlePostAiMeetings, handleGetAiMeetings, handleEndAiMeeting,
+  handleGetAiRep, handlePostAiRep, handleDeleteAiRep,
+  handlePostAiRepContext, handleDeleteAiRepContext, handleDeployAiRep,
+  handleGetDebriefs, handleGetDebrief, handleInternalRing,
+  handleInternalParticipantStatus, handleInternalRingStatus,
+  signalParticipantJoined,
+} from "./src/api/ai-handlers";
 
-const PORT             = parseInt(process.env.PORT || "3000");
-const APP_URL          = process.env.APP_URL || `http://localhost:${PORT}`;
-const LIVEKIT_URL      = process.env.LIVEKIT_URL      || "wss://your-livekit-server.com";
-const LIVEKIT_API_KEY  = process.env.LIVEKIT_API_KEY  || "devkey";
-const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || "devsecret0000000000000000000000";
-
-// ── Memgraph ──────────────────────────────────────────────────────────────────
-const MEMGRAPH_HOST = process.env.MEMGRAPH_HOST || "localhost";
-const MEMGRAPH_PORT = process.env.MEMGRAPH_PORT || "7687";
-const MEMGRAPH_USER = process.env.MEMGRAPH_USER || "";
-const MEMGRAPH_PASS = process.env.MEMGRAPH_PASS || "";
-const MEMGRAPH_URL  = `bolt://${MEMGRAPH_HOST}:${MEMGRAPH_PORT}`;
-
-const driver = neo4j.driver(
-  MEMGRAPH_URL,
-  neo4j.auth.basic(MEMGRAPH_USER, MEMGRAPH_PASS),
-  { disableLosslessIntegers: true }
-);
-console.log(`[memgraph] Connecting to ${MEMGRAPH_URL}`);
-
-async function runQuery(cypher: string, params: Record<string, unknown> = {}) {
-  const session = driver.session();
-  try { return (await session.run(cypher, params)).records; }
-  finally { await session.close(); }
-}
-
-async function initSchema() {
-  try { await runQuery("CREATE INDEX ON :Meeting(id)");   } catch { /* exists */ }
-  try { await runQuery("CREATE INDEX ON :User(email)");   } catch { /* exists */ }
-  try { await runQuery("CREATE INDEX ON :User(name)");    } catch { /* exists */ }
-  console.log("[memgraph] Schema ready");
-}
-initSchema().catch(e => console.warn("[memgraph] Schema init:", e.message));
+const PORT = config.port;
+const APP_URL = config.appUrl;
+const LIVEKIT_URL = config.livekit.url;
 
 // ── Waiting room (in-memory, private meetings) ────────────────────────────────
 interface WaitingUser {
@@ -70,74 +60,6 @@ setInterval(() => {
     if (users.size === 0) waitingRooms.delete(mid);
   });
 }, 5 * 60 * 1000);
-
-// ── Active sessions (in-memory, for @ring validation) ─────────────────────────
-// Tracks who is currently joined in each meeting room
-interface ActiveSession {
-  name:     string;
-  lastSeen: number;
-}
-const SESSION_TTL_MS = 90_000; // 90 s without heartbeat → not in meeting
-const activeSessions = new Map<string, Map<string, ActiveSession>>(); // meetingId → Map<email, session>
-
-function pruneStaleSessions(roomSessions: Map<string, ActiveSession>) {
-  const cutoff = Date.now() - SESSION_TTL_MS;
-  roomSessions.forEach((entry, email) => {
-    if (entry.lastSeen < cutoff) roomSessions.delete(email);
-  });
-}
-
-function isSessionActive(roomSessions: Map<string, ActiveSession> | undefined, email: string): boolean {
-  if (!roomSessions) return false;
-  const entry = roomSessions.get(email);
-  if (!entry) return false;
-  if (Date.now() - entry.lastSeen > SESSION_TTL_MS) {
-    roomSessions.delete(email);
-    return false;
-  }
-  return true;
-}
-
-// ── Ring system (in-memory) ───────────────────────────────────────────────────
-interface RingEntry {
-  ringId:       string;
-  fromEmail:    string;
-  fromName:     string;
-  toEmail:      string;
-  toName:       string;
-  meetingId:    string;
-  meetingLabel: string;
-  startedAt:    number;
-  status:       "ringing" | "accepted" | "rejected" | "expired";
-}
-// One ring per target email (most recent wins); also indexed by ringId
-const ringsById    = new Map<string, RingEntry>();
-const ringsByEmail = new Map<string, RingEntry>(); // targetEmail → ring
-
-// Auto-expire rings older than 2 min every 30s
-setInterval(() => {
-  const cutoff = Date.now() - 2 * 60 * 1000;
-  ringsById.forEach((r, id) => {
-    if (r.status === "ringing" && r.startedAt < cutoff) {
-      r.status = "expired";
-      ringsByEmail.delete(r.toEmail);
-    }
-  });
-  // Clean up fully resolved/expired rings older than 5 min
-  const stale = Date.now() - 5 * 60 * 1000;
-  ringsById.forEach((r, id) => {
-    if (r.status !== "ringing" && r.startedAt < stale) ringsById.delete(id);
-  });
-}, 30 * 1000);
-
-function generateId(label: string): string {
-  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)
-    + "-" + Date.now().toString(36);
-}
-
-function normEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
 
 // ── Static / helpers ──────────────────────────────────────────────────────────
 const MIME: Record<string, string> = {
@@ -167,12 +89,6 @@ function html(body: string, extra?: Record<string, string>): Response {
 
 function redirect(location: string, headers?: Record<string, string>): Response {
   return new Response(null, { status: 302, headers: { Location: location, ...headers } });
-}
-
-async function generateToken(room: string, name: string): Promise<string> {
-  const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, { identity: name, name, ttl: "2h" });
-  at.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
-  return at.toJwt();
 }
 
 // ── Server ────────────────────────────────────────────────────────────────────
@@ -255,6 +171,7 @@ serve({
           "emailVerified: false, verifyToken: $verifyToken, createdAt: $now })",
           { id, name, email, passwordHash, verifyToken, now }
         );
+        await createDefaultAssistant(email, name);
         await sendVerificationEmail(email, name, verifyToken);
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
@@ -385,6 +302,18 @@ serve({
     if (path === "/meetings/invitations") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(invitationsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/ai-meeting") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(aiMeetingSetupPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/settings/ai-rep") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(aiRepSettingsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/debriefs") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(debriefsPage({ name: session.name, email: session.email }));
     }
     if (path === "/room" || path.startsWith("/room/")) {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(req.url));
@@ -583,8 +512,8 @@ serve({
           { email: session.email, mid, role, now }
         );
         // Track in activeSessions for @ring validation
-        if (!activeSessions.has(mid)) activeSessions.set(mid, new Map());
-        activeSessions.get(mid)!.set(normEmail(session.email), { name, lastSeen: now });
+        ensureActiveSession(mid, normEmail(session.email), name);
+        signalParticipantJoined(mid, session.email).catch(() => {});
         return json({ ok: true, role });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -599,7 +528,7 @@ serve({
           { email: session.email, mid, now: Date.now() }
         );
         // Remove from activeSessions
-        activeSessions.get(mid)?.delete(normEmail(session.email));
+        removeActiveSession(mid, normEmail(session.email));
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -609,10 +538,7 @@ serve({
       if (!session) return json({ error: "Unauthorized" }, 401);
       const mid   = decodeURIComponent(heartbeatMatch[1]);
       const email = normEmail(session.email);
-      const roomSessions = activeSessions.get(mid);
-      const entry = roomSessions?.get(email);
-      if (!entry) return json({ error: "Not in meeting" }, 404);
-      entry.lastSeen = Date.now();
+      if (!touchActiveSession(mid, email)) return json({ error: "Not in meeting" }, 404);
       return json({ ok: true });
     }
 
@@ -636,44 +562,36 @@ serve({
           return json({ error: "meetingId required" }, 400);
         }
 
-        const roomSessions = activeSessions.get(meetingId);
+        const roomSessions = getActiveSessions(meetingId);
         if (roomSessions) pruneStaleSessions(roomSessions);
         if (!isSessionActive(roomSessions, callerEmail)) {
           console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 403, reason: "caller not in meeting" });
           return json({ error: "You must join the meeting before ringing someone" }, 403);
         }
 
-        // 1. Verify target email is registered
-        const userRows = await runQuery(
-          "MATCH (u:User {email: $email}) RETURN u.name AS name",
-          { email: targetEmail }
+        const result = await createRing(
+          callerEmail,
+          session.name || session.email,
+          targetEmail,
+          meetingId,
+          meetingLabel,
+          async (email) => {
+            const userRows = await runQuery(
+              "MATCH (u:User {email: $email}) RETURN u.name AS name",
+              { email }
+            );
+            return userRows.length ? (userRows[0].get("name") as string) : null;
+          },
+          (email) => isSessionActive(roomSessions, email)
         );
-        if (userRows.length === 0) {
-          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 404, reason: "no account" });
-          return json({ error: "No account found for that email" }, 404);
-        }
-        const toName = (userRows[0].get("name") as string) || targetEmail;
 
-        // 2. Check target is NOT already in the meeting
-        if (isSessionActive(roomSessions, targetEmail)) {
-          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 409, reason: "target already in meeting" });
-          return json({ error: "That person is already in the meeting" }, 409);
+        if ("error" in result) {
+          console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: result.status, reason: result.error });
+          return json({ error: result.error }, result.status);
         }
 
-        // 3. Create ring entry (replaces any existing ring for this target)
-        const existing = ringsByEmail.get(targetEmail);
-        if (existing) { existing.status = "expired"; ringsById.delete(existing.ringId); }
-
-        const ringId: string = "ring-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6);
-        const ring: RingEntry = {
-          ringId, fromEmail: callerEmail, fromName: session.name || session.email,
-          toEmail: targetEmail, toName, meetingId, meetingLabel,
-          startedAt: Date.now(), status: "ringing",
-        };
-        ringsById.set(ringId, ring);
-        ringsByEmail.set(targetEmail, ring);
-        console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 200, ringId, toName });
-        return json({ ringId, toName });
+        console.log("[ring-api] create", { caller: callerEmail, target: targetEmail, meetingId, status: 200, ringId: result.ringId, toName: result.toName });
+        return json({ ringId: result.ringId, toName: result.toName });
       } catch (e) {
         console.log("[ring-api] create", { status: 500, error: String(e) });
         return json({ error: String(e) }, 500);
@@ -683,11 +601,11 @@ serve({
     // GET /api/rings/incoming — target polls to check for an incoming ring
     if (path === "/api/rings/incoming" && req.method === "GET") {
       if (!session) return json({ ring: null });
-      const ring = ringsByEmail.get(normEmail(session.email));
+      const ring = getRingByEmail(normEmail(session.email));
       if (!ring || ring.status !== "ringing") return json({ ring: null });
       // Check expiry
       if (Date.now() - ring.startedAt > 2 * 60 * 1000) {
-        ring.status = "expired"; ringsByEmail.delete(normEmail(session.email));
+        ring.status = "expired"; deleteRingByEmail(normEmail(session.email));
         return json({ ring: null });
       }
       return json({
@@ -707,7 +625,7 @@ serve({
     if (ringRespondMatch && req.method === "POST") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       const ringId = ringRespondMatch[1];
-      const ring   = ringsById.get(ringId);
+      const ring   = getRingById(ringId);
       if (!ring) return json({ error: "Ring not found" }, 404);
       if (ring.toEmail !== normEmail(session.email)) return json({ error: "Forbidden" }, 403);
       try {
@@ -715,7 +633,7 @@ serve({
         const action = b.action; // "accept" | "reject"
         if (action !== "accept" && action !== "reject") return json({ error: "action must be accept or reject" }, 400);
         ring.status = action === "accept" ? "accepted" : "rejected";
-        ringsByEmail.delete(normEmail(session.email));
+        deleteRingByEmail(normEmail(session.email));
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -725,11 +643,11 @@ serve({
     if (ringStatusMatch && req.method === "GET") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       const ringId = ringStatusMatch[1];
-      const ring   = ringsById.get(ringId);
+      const ring   = getRingById(ringId);
       if (!ring) return json({ status: "expired" });
       // Auto-expire after 2 min
       if (ring.status === "ringing" && Date.now() - ring.startedAt > 2 * 60 * 1000) {
-        ring.status = "expired"; ringsByEmail.delete(ring.toEmail);
+        ring.status = "expired"; deleteRingByEmail(ring.toEmail);
       }
       return json({ status: ring.status, toName: ring.toName });
     }
@@ -767,6 +685,156 @@ serve({
         console.error("[invite] Failed to send email invite:", e);
         return json({ error: String(e) }, 500);
       }
+    }
+
+    // ── AI Host & Rep APIs ────────────────────────────────────────────────────
+
+    if (path === "/api/internal/rings" && req.method === "POST") {
+      try {
+        const b = await req.json() as { fromEmail?: string; fromName?: string; toEmail?: string; meetingId?: string; meetingLabel?: string };
+        const result = await handleInternalRing(req.headers.get("X-Worker-Secret"), b);
+        if ("error" in result && result.status !== 200) {
+          return json({ error: result.error }, result.status);
+        }
+        return json({ ringId: result.ringId, toName: result.toName });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const internalRingStatusMatch = path.match(/^\/api\/internal\/rings\/([^/]+)\/status$/);
+    if (internalRingStatusMatch && req.method === "GET") {
+      try {
+        const ringId = decodeURIComponent(internalRingStatusMatch[1]);
+        const result = await handleInternalRingStatus(req.headers.get("X-Worker-Secret"), ringId);
+        if ("error" in result && result.status !== 200) {
+          return json({ error: result.error }, result.status);
+        }
+        return json({ ringStatus: result.ringStatus });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const internalParticipantStatusMatch = path.match(
+      /^\/api\/internal\/meetings\/([^/]+)\/participants\/([^/]+)\/status$/
+    );
+    if (internalParticipantStatusMatch && req.method === "GET") {
+      try {
+        const meetingId = decodeURIComponent(internalParticipantStatusMatch[1]);
+        const email = decodeURIComponent(internalParticipantStatusMatch[2]);
+        const result = await handleInternalParticipantStatus(
+          req.headers.get("X-Worker-Secret"),
+          meetingId,
+          email
+        );
+        if ("error" in result && result.status !== 200) {
+          return json({ error: result.error }, result.status);
+        }
+        return json({ inRoom: result.inRoom, joined: result.joined });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-meetings" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handlePostAiMeetings(session, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ meetingId: result.meetingId, workflowId: result.workflowId });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-meetings" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleGetAiMeetings(session);
+        return json({ meetings: result.meetings });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const aiMeetingEndMatch = path.match(/^\/api\/ai-meetings\/([^/]+)\/end$/);
+    if (aiMeetingEndMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const meetingId = decodeURIComponent(aiMeetingEndMatch[1]);
+      try {
+        const result = await handleEndAiMeeting(session, meetingId);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-rep" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleGetAiRep(session);
+        return json({ rep: result.rep, contexts: result.contexts });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-rep" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handlePostAiRep(session, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ repId: result.repId });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-rep" && req.method === "DELETE") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleDeleteAiRep(session);
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-rep/context" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handlePostAiRepContext(session, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ contextId: result.contextId });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const aiRepContextDeleteMatch = path.match(/^\/api\/ai-rep\/context\/([^/]+)$/);
+    if (aiRepContextDeleteMatch && req.method === "DELETE") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const contextId = decodeURIComponent(aiRepContextDeleteMatch[1]);
+      try {
+        await handleDeleteAiRepContext(session, contextId);
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/ai-rep/deploy" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json() as { meetingId?: string };
+        const meetingId = (b.meetingId || "").trim();
+        if (!meetingId) return json({ error: "meetingId required" }, 400);
+        const result = await handleDeployAiRep(session, meetingId);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ workflowId: result.workflowId });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/debriefs" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleGetDebriefs(session);
+        return json({ debriefs: result.debriefs });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const debriefGetMatch = path.match(/^\/api\/debriefs\/([^/]+)$/);
+    if (debriefGetMatch && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const debriefId = decodeURIComponent(debriefGetMatch[1]);
+      try {
+        const result = await handleGetDebrief(session, debriefId);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ debrief: result.debrief });
+      } catch (e) { return json({ error: String(e) }, 500); }
     }
 
     // ── Tree APIs ─────────────────────────────────────────────────────────────

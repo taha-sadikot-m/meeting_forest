@@ -151,6 +151,29 @@ export async function sendMeetingInviteEmail(
     </p>`));
 }
 
+export async function sendDebriefEmail(
+  email: string,
+  meetingLabel: string,
+  summary: string,
+  debriefUrl: string
+) {
+  await sendEmail(email, `Meeting debrief: ${meetingLabel}`, emailBase(`
+    <h2 style="font-size:22px;font-weight:700;margin:0 0 8px">Your Assistant debrief is ready</h2>
+    <p style="color:#6B7280;font-size:14px;line-height:1.6;margin:0 0 16px">
+      Your Assistant attended <strong>"${meetingLabel}"</strong> on your behalf.
+    </p>
+    <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 24px;background:#F9FAFB;padding:16px;border-radius:10px">
+      ${summary}
+    </p>
+    <a href="${debriefUrl}" style="display:inline-block;background:#D15000;color:white;text-decoration:none;
+       padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px">
+      View Full Debrief
+    </a>
+    <p style="font-size:12px;color:#9CA3AF;margin-top:16px">
+      Can't click? Copy: <a href="${debriefUrl}" style="color:#D15000">${debriefUrl}</a>
+    </p>`));
+}
+
 export async function sendResetEmail(email: string, name: string, token: string) {
   const link = `${APP_URL}/reset-password?token=${token}`;
   await sendEmail(email, "Reset your Meeting Forest password", emailBase(`
