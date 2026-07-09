@@ -176,7 +176,8 @@ body {
   padding: 14px 16px; border-top: 1.5px solid var(--sb-border);
   margin-top: auto; display: flex; align-items: center; gap: 10px;
 }
-.sb-user { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.sb-user { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-decoration: none; color: inherit; border-radius: var(--r-lg); transition: background .15s; }
+.sb-user:hover { background: #f5f5f5; }
 .sb-user-avatar {
   width: 34px; height: 34px; border-radius: 50%;
   background: linear-gradient(135deg, #D15000, #ff7b2e);
@@ -415,8 +416,54 @@ html.sidebar-collapsed .app-body { margin-left: 66px; }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* ── Modal (start meeting, context dialogs) ───────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex !important; }
+.modal {
+  background: white;
+  border-radius: var(--r-xl);
+  padding: 32px;
+  width: min(500px, 90vw);
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+}
+.modal h3 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
+.modal p  { font-size: 13px; color: var(--muted-fg); margin-bottom: 20px; }
+.modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #ccc; }
+
+/* ── Toggle switch (settings) ─────────────────────────────────────────────── */
+.perm-toggle {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  background: #D1D5DB;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background .18s;
+}
+.perm-toggle:disabled { opacity: 0.6; cursor: wait; }
+.perm-toggle.on { background: #D15000; }
+.perm-toggle::after {
+  content: '';
+  position: absolute;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: white;
+  top: 3px; left: 3px;
+  transition: transform .18s;
+}
+.perm-toggle.on::after { transform: translateX(16px); }

@@ -10,6 +10,7 @@ import { getRepWorkflowIds } from "../rep-registry";
 import { runQuery } from "../../db/memgraph";
 import { createRing, normEmail } from "../../rings";
 import { startAssistantWorkflow } from "../../api/ai-handlers";
+import { isRingingEnabledForUser as queryRingingEnabled } from "../../db/user-queries";
 
 const RING_WAIT_MS = 2 * 60 * 1000;
 const POLL_INTERVAL_MS = 5000;
@@ -85,6 +86,10 @@ export async function waitForParticipantPickup(
   }
 
   return isParticipantInMeeting(meetingId, email);
+}
+
+export async function isRingingEnabledForUser(email: string): Promise<boolean> {
+  return queryRingingEnabled(email);
 }
 
 export async function deployAssistantForMeeting(

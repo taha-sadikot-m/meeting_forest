@@ -8,6 +8,7 @@ import { invitationsPage } from "./src/pages/invitations";
 import { aiMeetingSetupPage } from "./src/pages/ai-meeting-setup";
 import { aiRepSettingsPage } from "./src/pages/ai-rep-settings";
 import { debriefsPage } from "./src/pages/debriefs";
+import { settingsPage } from "./src/pages/settings";
 import { loginPage } from "./src/pages/login";
 import { registerPage } from "./src/pages/register";
 import { forgotPasswordPage } from "./src/pages/forgot-password";
@@ -37,6 +38,7 @@ import {
   handleInternalParticipantStatus, handleInternalRingStatus,
   signalParticipantJoined,
 } from "./src/api/ai-handlers";
+import { handleGetUserSettings, handlePatchUserSettings } from "./src/api/user-handlers";
 
 const PORT = config.port;
 const APP_URL = config.appUrl;
@@ -168,7 +170,7 @@ serve({
         const now          = Date.now();
         await runQuery(
           "CREATE (u:User { id: $id, name: $name, email: $email, passwordHash: $passwordHash, " +
-          "emailVerified: false, verifyToken: $verifyToken, createdAt: $now })",
+          "emailVerified: false, verifyToken: $verifyToken, createdAt: $now, ringingEnabled: true })",
           { id, name, email, passwordHash, verifyToken, now }
         );
         await createDefaultAssistant(email, name);
@@ -314,6 +316,10 @@ serve({
     if (path === "/debriefs") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(debriefsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/settings") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(settingsPage({ name: session.name, email: session.email }));
     }
     if (path === "/room" || path.startsWith("/room/")) {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(req.url));
@@ -757,6 +763,26 @@ serve({
         const result = await handleEndAiMeeting(session, meetingId);
         if (result.status !== 200) return json({ error: result.error }, result.status);
         return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/user/settings" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleGetUserSettings(session);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ settings: result.settings });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/user/settings" && req.method === "PATCH") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      if (!sessionToken) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handlePatchUserSettings(session, sessionToken, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ settings: result.settings });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 

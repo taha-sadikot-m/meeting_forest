@@ -42,6 +42,11 @@ export function destroySession(token: string) {
   sessions.delete(token);
 }
 
+export function updateSessionName(token: string, name: string): void {
+  const s = sessions.get(token);
+  if (s) s.name = name;
+}
+
 // ── Cookie helpers ────────────────────────────────────────────────────────────
 
 export function getSessionCookie(req: Request): string | undefined {

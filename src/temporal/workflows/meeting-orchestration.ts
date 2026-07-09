@@ -11,6 +11,7 @@ const {
   disconnectHostBotActivity,
   updateMeetingStatus,
   signalMeetingEndedToReps,
+  isRingingEnabledForUser,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "5 minutes",
   retry: { maximumAttempts: 3 },
@@ -60,14 +61,20 @@ export async function meetingOrchestrationWorkflow(input: MeetingOrchestrationIn
 
     if (await isParticipantInMeeting(meetingId, p.email)) continue;
 
-    let pickedUp = false;
-    for (let attempt = 0; attempt < RING_ATTEMPTS && !pickedUp; attempt++) {
-      const ringId = await ringParticipant(creatorEmail, creatorName, p.email, meetingId, label);
-      pickedUp = await waitForParticipantPickup(meetingId, p.email, ringId);
-    }
+    const ringingOn = await isRingingEnabledForUser(p.email);
 
-    if (!pickedUp && !ended) {
+    if (!ringingOn) {
       await deployAssistantForMeeting(meetingId, p.email);
+    } else {
+      let pickedUp = false;
+      for (let attempt = 0; attempt < RING_ATTEMPTS && !pickedUp; attempt++) {
+        const ringId = await ringParticipant(creatorEmail, creatorName, p.email, meetingId, label);
+        pickedUp = await waitForParticipantPickup(meetingId, p.email, ringId);
+      }
+
+      if (!pickedUp && !ended) {
+        await deployAssistantForMeeting(meetingId, p.email);
+      }
     }
   }
 

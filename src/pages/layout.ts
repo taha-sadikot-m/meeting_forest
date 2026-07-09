@@ -4,7 +4,8 @@ export type AppPage =
   | "invitations"
   | "ai-meeting"
   | "ai-rep"
-  | "debriefs";
+  | "debriefs"
+  | "settings";
 
 function linkClass(active: AppPage, page: AppPage): string {
   return active === page ? "sb-link active" : "sb-link";
@@ -89,16 +90,23 @@ export function appSidebar(user: { name: string; email: string }, active: AppPag
       </svg>
       <span>Debriefs</span>
     </a>
+    <a href="/settings" class="${linkClass(active, "settings")}" title="Settings">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+      <span>Settings</span>
+    </a>
   </nav>
 
   <div class="sb-footer">
-    <div class="sb-user">
+    <a href="/settings" class="sb-user" title="Settings">
       <div class="sb-user-avatar">${initial}</div>
       <div class="sb-user-info">
         <div class="sb-user-name">${safeName}</div>
         <div class="sb-user-role">${safeEmail}</div>
       </div>
-    </div>
+    </a>
     <a href="/logout" class="sb-logout" title="Logout">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -144,7 +152,7 @@ export function startMeetingModal(user: { name: string; email: string }, include
       </div>
     </div>` : "";
 
-  return /* html */`<div class="modal-overlay" id="startModal">
+  return /* html */`<div class="modal-overlay" id="startModal" hidden>
   <div class="modal">
     <h3>Start a New Meeting</h3>
     <p>You'll be the Super Admin — you can create a meeting tree with sub-rooms.</p>
@@ -192,11 +200,17 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
   }
 
   function openStartModal() {
-    document.getElementById('startModal').classList.add('open');
+    const el = document.getElementById('startModal');
+    el.hidden = false;
+    el.classList.add('open');
     document.getElementById('newRoomName').value = '';
     document.getElementById('newRoomName').focus();
   }
-  function closeStartModal() { document.getElementById('startModal').classList.remove('open'); }
+  function closeStartModal() {
+    const el = document.getElementById('startModal');
+    el.hidden = true;
+    el.classList.remove('open');
+  }
   document.getElementById('startModal').addEventListener('click', e => {
     if (e.target === document.getElementById('startModal')) closeStartModal();
   });
