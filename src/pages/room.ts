@@ -102,6 +102,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     <!-- Remote screen share display — hidden until someone shares their screen -->
     <div id="remoteScreenArea" style="display:none;flex:1;min-height:0;position:relative;background:#111;border-radius:12px;overflow:hidden;margin-bottom:8px">
       <video id="remoteScreenVideo" autoplay playsinline style="width:100%;height:100%;object-fit:contain;display:block"></video>
+      <audio id="remoteScreenAudio" autoplay style="display:none"></audio>
       <div id="remoteScreenLabel" style="position:absolute;top:10px;left:12px;background:rgba(0,0,0,.65);color:#fff;padding:5px 12px;border-radius:8px;font-size:12px;font-weight:600;pointer-events:none"></div>
     </div>
 
@@ -139,6 +140,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           <line x1="12" y1="17" x2="12" y2="21"/>
         </svg>
         You are sharing your screen
+        <span class="share-audio-pill off" id="shareAudioStatus">System audio: Off</span>
         <button class="btn btn-danger btn-sm" onclick="stopScreenShare()">Stop Sharing</button>
       </div>
       <video class="screen-video" id="screenVideo" autoplay playsinline></video>
@@ -953,6 +955,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   let activeRoomId = ROOM_ID;   // tracks which sub-meeting the user is currently in
   let _roomSwitching = false;   // true while intentionally switching rooms (suppresses Disconnected redirect)
   let micEnabled = !_joinedMuted, camEnabled = !_joinedMuted, sharing = false;
+  let shareAudioActive = false;
+  let livekitTrackSource = null;
   let panelOpen = false, currentPanel = 'chat';
   let localStream = null, lobbyStream = null;
   let treeInitialized = false;
@@ -1716,7 +1720,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         body: JSON.stringify({ room: activeRoomId, name: userName })
       });
       const { token, url } = await res.json();
-      const { Room, RoomEvent } = await import('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs');
+      const { Room, RoomEvent, Track } = await import('https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs');
+      livekitTrackSource = Track.Source;
       livekitRoom = new Room({ adaptiveStream: true, dynacast: true });
       livekitRoom
         .on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
@@ -1724,6 +1729,18 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         })
         .on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
           removeRemoteTrack(track, participant);
+        })
+        .on(RoomEvent.LocalTrackPublished, (pub) => {
+          if (sharing && isScreenShareAudioPub(pub)) {
+            shareAudioActive = true;
+            updateShareAudioBanner();
+          }
+        })
+        .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+          if (isScreenShareAudioPub(pub)) {
+            shareAudioActive = false;
+            updateShareAudioBanner();
+          }
         })
         .on(RoomEvent.ParticipantConnected, participant => {
           addParticipantTile(participant);
@@ -1769,6 +1786,11 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       updateLayout();
       return;
     }
+    if (track.source === 'screen_share_audio') {
+      const audio = document.getElementById('remoteScreenAudio');
+      if (audio) track.attach(audio);
+      return;
+    }
     // Camera / audio track — attach to participant's tile
     const tile = document.getElementById('tile-' + participant.identity) || createParticipantTile(participant);
     if (track.kind === 'audio') {
@@ -1790,9 +1812,19 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (track && track.source === 'screen_share') {
       const area = document.getElementById('remoteScreenArea');
       const vid  = document.getElementById('remoteScreenVideo');
+      const audio = document.getElementById('remoteScreenAudio');
       area.style.display = 'none';
       vid.srcObject = null;
+      if (audio) audio.srcObject = null;
       updateLayout();
+      return;
+    }
+    if (track && track.source === 'screen_share_audio') {
+      const audio = document.getElementById('remoteScreenAudio');
+      if (audio) {
+        track.detach(audio);
+        audio.srcObject = null;
+      }
       return;
     }
     const identity = participant ? participant.identity : track;
@@ -1924,41 +1956,102 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     document.getElementById('selfPlaceholder').style.opacity = camEnabled ? '0' : '1';
     showToast(camEnabled ? 'Camera on' : 'Camera off');
   }
-  async function toggleScreenShare() {
-    if (!sharing) {
-      if (!livekitRoom) { showToast('Not connected to room', 'error'); return; }
-      try {
-        const pub = await livekitRoom.localParticipant.setScreenShareEnabled(true);
-        if (!pub) { showToast('Screen share cancelled', 'info'); return; }
-        sharing = true;
-        document.getElementById('shareBtn').classList.add('active');
-        const overlay = document.getElementById('screenShareOverlay');
-        overlay.style.display = 'flex';
-        updateLayout();
-        if (pub.track && pub.track.mediaStreamTrack) {
-          document.getElementById('screenVideo').srcObject = new MediaStream([pub.track.mediaStreamTrack]);
-          pub.track.mediaStreamTrack.onended = stopScreenShare;
-        }
-        showToast('Screen sharing started', 'success');
-      } catch (e) {
-        sharing = false;
-        document.getElementById('shareBtn').classList.remove('active');
-        document.getElementById('screenShareOverlay').style.display = 'none';
-        showToast('Screen share cancelled', 'info');
-      }
-    } else { stopScreenShare(); }
+  function isScreenShareAudioPub(pub) {
+    if (!pub) return false;
+    const src = pub.source;
+    return src === 'screen_share_audio'
+      || (livekitTrackSource && src === livekitTrackSource.ScreenShareAudio);
   }
-  function stopScreenShare() {
+
+  function hasScreenShareAudioTrack() {
+    if (!livekitRoom) return false;
+    const lp = livekitRoom.localParticipant;
+    for (const pub of lp.audioTrackPublications.values()) {
+      if (isScreenShareAudioPub(pub) && pub.track) return true;
+    }
+    for (const pub of lp.trackPublications.values()) {
+      if (isScreenShareAudioPub(pub) && pub.track) return true;
+    }
+    return false;
+  }
+
+  function updateShareAudioBanner() {
+    const status = document.getElementById('shareAudioStatus');
+    if (!status) return;
+    if (shareAudioActive) {
+      status.textContent = 'System audio: On';
+      status.classList.add('on');
+      status.classList.remove('off');
+    } else {
+      status.textContent = 'System audio: Off';
+      status.classList.add('off');
+      status.classList.remove('on');
+    }
+  }
+
+  async function startScreenShare() {
+    if (!livekitRoom) { showToast('Not connected to room', 'error'); return; }
+    try {
+      const options = {
+        audio: true,
+        systemAudio: 'include',
+        suppressLocalAudioPlayback: true,
+      };
+      const pub = await livekitRoom.localParticipant.setScreenShareEnabled(true, options);
+      if (!pub) { showToast('Screen share cancelled', 'info'); return; }
+      sharing = true;
+      shareAudioActive = hasScreenShareAudioTrack();
+      document.getElementById('shareBtn').classList.add('active');
+      const overlay = document.getElementById('screenShareOverlay');
+      overlay.style.display = 'flex';
+      updateShareAudioBanner();
+      updateLayout();
+      if (pub.track && pub.track.mediaStreamTrack) {
+        document.getElementById('screenVideo').srcObject = new MediaStream([pub.track.mediaStreamTrack]);
+        pub.track.mediaStreamTrack.onended = stopScreenShare;
+      }
+      showToast('Screen sharing started', 'success');
+      if (!shareAudioActive) {
+        setTimeout(() => {
+          if (!sharing) return;
+          shareAudioActive = hasScreenShareAudioTrack();
+          updateShareAudioBanner();
+        }, 1000);
+      }
+    } catch (e) {
+      sharing = false;
+      shareAudioActive = false;
+      document.getElementById('shareBtn').classList.remove('active');
+      document.getElementById('screenShareOverlay').style.display = 'none';
+      showToast('Screen share cancelled', 'info');
+    }
+  }
+
+  async function stopScreenShareInternal(showMsg) {
     sharing = false;
+    shareAudioActive = false;
     document.getElementById('shareBtn').classList.remove('active');
     const overlay = document.getElementById('screenShareOverlay');
     overlay.style.position = '';
     overlay.style.display = 'none';
     const vid = document.getElementById('screenVideo');
     if (vid.srcObject) { vid.srcObject.getTracks().forEach(t => t.stop()); vid.srcObject = null; }
-    if (livekitRoom) livekitRoom.localParticipant.setScreenShareEnabled(false);
+    if (livekitRoom) await livekitRoom.localParticipant.setScreenShareEnabled(false);
+    updateShareAudioBanner();
     updateLayout();
-    showToast('Screen sharing stopped');
+    if (showMsg) showToast('Screen sharing stopped');
+  }
+
+  function stopScreenShare() {
+    stopScreenShareInternal(true);
+  }
+
+  function toggleScreenShare() {
+    if (sharing) {
+      stopScreenShare();
+    } else {
+      startScreenShare();
+    }
   }
 
   // ── Panel ─────────────────────────────────────────────────────────────────
