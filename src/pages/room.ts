@@ -12,7 +12,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Meeting Forest — Room</title>
   <link rel="stylesheet" href="/public/styles.css" />
   <link rel="stylesheet" href="/public/room.css" />
@@ -29,14 +29,14 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
         </svg>
       </div>
-      <span>Meeting Forest</span>
+      <span class="room-logo-text">Meeting Forest</span>
     </a>
     <div class="room-divider-v"></div>
     <div class="room-name-display">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
       </svg>
-      <span id="roomNameDisplay">${safeRoomId}</span>
+      <span id="roomNameDisplay" class="room-name-text">${safeRoomId}</span>
     </div>
     <!-- Multi-room presence chip (super admin only) -->
     <div class="tree-presence-chip" id="presenceChip" style="display:none">
@@ -60,38 +60,88 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   </div>
 
   <div class="room-topbar-right">
-    <button class="room-top-btn" id="securityBtn" title="Security" onclick="toggleSecurity()">
+    <button class="room-top-btn room-top-secondary" id="securityBtn" title="Security" onclick="toggleSecurity()">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
       </svg>
     </button>
     <!-- Share / invite link button -->
-    <button class="room-top-btn" id="inviteBtn" title="Copy invite link" onclick="showInviteModal()" style="gap:6px">
+    <button class="room-top-btn room-top-secondary" id="inviteBtn" title="Copy invite link" onclick="showInviteModal()" style="gap:6px">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
         <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
       </svg>
-      <span style="font-size:12px;font-weight:700">Invite</span>
+      <span class="room-top-btn-label" style="font-size:12px;font-weight:700">Invite</span>
     </button>
-    <button class="room-top-btn" id="infoBtn" title="Meeting info" onclick="showInfo()">
+    <button class="room-top-btn room-top-secondary" id="infoBtn" title="Meeting info" onclick="showInfo()">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/>
         <line x1="12" y1="8" x2="12.01" y2="8"/>
       </svg>
     </button>
-    <button class="room-top-btn" id="recordBtn" title="Record" onclick="toggleRecord()" style="gap:6px">
+    <button class="room-top-btn room-top-secondary" id="recordBtn" title="Record" onclick="toggleRecord()" style="gap:6px">
       <div class="rec-dot" style="width:8px;height:8px;background:var(--red)"></div>
-      <span style="font-size:12px;font-weight:700">REC</span>
+      <span class="room-top-btn-label" style="font-size:12px;font-weight:700">REC</span>
     </button>
-    <button class="btn btn-danger btn-sm" onclick="leaveRoom()" style="border-radius:8px;gap:6px">
+    <button class="btn btn-danger btn-sm room-top-leave" onclick="leaveRoom()" style="border-radius:8px;gap:6px">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
         <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
       </svg>
       Leave
     </button>
+    <button class="room-top-btn room-top-menu-btn" id="topbarMenuBtn" title="Menu" onclick="toggleTopbarMenu()" aria-expanded="false" aria-controls="topbarMenu">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/>
+      </svg>
+      <span class="room-top-btn-label" style="font-size:12px;font-weight:700">Menu</span>
+    </button>
   </div>
 </header>
+
+<!-- ── Topbar overflow menu (mobile/tablet) ─────────────────────────────────── -->
+<div class="topbar-menu" id="topbarMenu" style="display:none" role="menu">
+  <button class="more-menu-item" onclick="toggleTopbarMenu();showInviteModal()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </svg>
+    Invite
+  </button>
+  <button class="more-menu-item" onclick="toggleTopbarMenu();showInfo()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/>
+      <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+    Meeting info
+  </button>
+  <button class="more-menu-item" onclick="toggleTopbarMenu();toggleSecurity()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+    Security
+  </button>
+  <button class="more-menu-item" id="topbarRecordItem" onclick="toggleTopbarMenu();toggleRecord()">
+    <div class="rec-dot" style="width:8px;height:8px;background:var(--red);flex-shrink:0"></div>
+    <span id="topbarRecordLabel">Record</span>
+  </button>
+  <div class="more-menu-item topbar-menu-meta" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="1 6 1 22"/><polyline points="6 6 6 22"/><polyline points="11 6 11 22"/>
+      <polyline points="16 10 16 22" opacity=".4"/><polyline points="21 14 21 22" opacity=".2"/>
+    </svg>
+    Signal: Good
+  </div>
+  <div class="more-menu-item topbar-menu-meta" id="topbarPresenceItem" style="display:none">
+    <div class="tree-presence-dot"></div>
+    <span id="topbarPresenceLabel">1 room</span>
+  </div>
+  <div class="more-menu-divider"></div>
+  <button class="more-menu-item danger" onclick="leaveRoom()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    Leave Meeting
+  </button>
+</div>
 
 <!-- ── Main layout ─────────────────────────────────────────────────────────── -->
 <div class="room-layout" id="roomLayout">
@@ -135,13 +185,15 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     <!-- Screen share overlay -->
     <div class="screen-share-overlay" id="screenShareOverlay" style="display:none">
       <div class="screen-share-banner">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
-          <line x1="12" y1="17" x2="12" y2="21"/>
-        </svg>
-        You are sharing your screen
-        <span class="share-audio-pill off" id="shareAudioStatus">System audio: Off</span>
-        <button class="btn btn-danger btn-sm" onclick="stopScreenShare()">Stop Sharing</button>
+        <div class="screen-share-banner-status">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+          </svg>
+          <span>You are sharing your screen</span>
+          <span class="share-audio-pill off" id="shareAudioStatus">System audio: Off</span>
+        </div>
+        <button class="btn btn-danger btn-sm screen-share-stop" onclick="stopScreenShare()">Stop Sharing</button>
       </div>
       <video class="screen-video" id="screenVideo" autoplay playsinline></video>
     </div>
@@ -167,6 +219,11 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <!-- Permissions tab — shown only for admins -->
       <button class="panel-tab" id="tabPermissions" onclick="switchPanel('permissions')" style="display:none">
         Perms
+      </button>
+      <button class="panel-close-btn" id="panelCloseBtn" onclick="closeRoomPanel()" title="Close panel" aria-label="Close panel">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
       </button>
     </div>
 
@@ -275,7 +332,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
             <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
           </svg>
         </button>
-        <button class="ctrl-btn-caret" onclick="showAudioMenu()">
+        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showAudioMenu()">
           <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
@@ -293,7 +350,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
             <line x1="1" y1="1" x2="23" y2="23"/>
           </svg>
         </button>
-        <button class="ctrl-btn-caret" onclick="showVideoMenu()">
+        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showVideoMenu()">
           <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
@@ -302,7 +359,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   </div>
 
   <div class="controls-center">
-    <div class="control-group">
+    <div class="control-group ctrl-mobile-secondary">
       <button class="ctrl-btn" id="shareBtn" onclick="toggleScreenShare()" title="Share screen">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="3" width="20" height="14" rx="2"/>
@@ -312,7 +369,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <span class="ctrl-label">Share</span>
     </div>
 
-    <div class="control-group">
+    <div class="control-group ctrl-mobile-secondary">
       <button class="ctrl-btn" id="reactBtn" onclick="toggleReactions()" title="Reactions">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"/>
@@ -322,7 +379,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <span class="ctrl-label">React</span>
     </div>
 
-    <div class="control-group">
+    <div class="control-group ctrl-mobile-secondary">
       <button class="ctrl-btn" onclick="toggleWhiteboard()" title="Whiteboard">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
@@ -333,7 +390,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     </div>
 
     <!-- Tree button — visible only for admin/superadmin -->
-    <div class="control-group" id="treeCtrlGroup" style="display:none">
+    <div class="control-group ctrl-mobile-secondary" id="treeCtrlGroup" style="display:none">
       <button class="ctrl-btn" id="treeBtn" onclick="openTreeOverlay()" title="Meeting Tree">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
@@ -379,7 +436,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     </div>
 
     <!-- Waiting room button — admin of private meeting only -->
-    <div class="control-group" id="waitingCtrlGroup" style="display:none">
+    <div class="control-group ctrl-mobile-secondary" id="waitingCtrlGroup" style="display:none">
       <button class="ctrl-btn" id="waitingBtn" onclick="toggleWaitingPanel()" title="Waiting Room">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -408,6 +465,42 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
 <!-- ── More options menu ───────────────────────────────────────────────────── -->
 <div class="more-menu" id="moreMenu" style="display:none">
+  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();toggleScreenShare()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"/>
+      <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+    </svg>
+    Share screen
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();toggleReactions()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M8 14s1.5 2 4 2 4-2 4-2"/>
+    </svg>
+    Reactions
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();toggleWhiteboard()">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
+      <line x1="9" y1="21" x2="9" y2="9"/>
+    </svg>
+    Whiteboard
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" id="moreTreeItem" onclick="toggleMore();openTreeOverlay()" style="display:none">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/>
+      <line x1="12" y1="7" x2="12" y2="14"/>
+      <line x1="12" y1="14" x2="5" y2="17"/><line x1="12" y1="14" x2="19" y2="17"/>
+    </svg>
+    Meeting Tree
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" id="moreWaitingItem" onclick="toggleMore();toggleWaitingPanel()" style="display:none">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+    </svg>
+    Waiting Room
+  </button>
+  <div class="more-menu-divider more-menu-mobile-only"></div>
   <button class="more-menu-item" onclick="toggleMore();openSettings()">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="12" cy="12" r="3"/>
@@ -434,82 +527,86 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 <div class="lobby-overlay" id="lobbyOverlay">
   <div class="lobby-card">
 
-    <!-- Header — always visible -->
-    <div style="text-align:center;margin-bottom:20px">
-      <div class="sb-logo-icon" style="width:44px;height:44px;border-radius:12px;margin:0 auto 12px">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2.5">
-          <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
-        </svg>
-      </div>
-      <h2 style="font-size:20px;font-weight:800;margin-bottom:4px" id="lobbyTitle">Ready to join?</h2>
-      <p style="font-size:13px;color:rgba(255,255,255,.5)" id="lobbySubtitle">Room: <strong style="color:rgba(255,255,255,.8)">${safeRoomId}</strong></p>
-      <div id="lobbyRoleBadge" style="margin-top:8px;display:none">
-        <span style="font-size:11px;font-weight:700;background:#FFF3E9;color:#D15000;border:1px solid #FED7AA;border-radius:20px;padding:3px 10px"></span>
-      </div>
-    </div>
-
     <!-- ── Setup State (default) ──────────────────────────────────────────── -->
-    <div id="lobbySetupState">
-      <div class="lobby-preview">
-        <video id="lobbyVideo" muted autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:12px;background:#111"></video>
-        <div class="lobby-preview-name" id="lobbyPreviewName">Loading camera…</div>
-      </div>
-
-      <div style="display:flex;gap:16px;justify-content:center;margin-bottom:20px">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
-          <button class="ctrl-btn" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
-            <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-            <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-              <line x1="1" y1="1" x2="23" y2="23"/>
-              <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
-              <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
-              <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
-            </svg>
-          </button>
-          <span style="font-size:11px;color:rgba(255,255,255,.4);font-weight:600">Mic</span>
+    <div id="lobbySetupState" class="lobby-setup">
+      <div class="lobby-media-pane">
+        <div class="lobby-preview">
+          <video id="lobbyVideo" muted autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:12px;background:#111"></video>
+          <div class="lobby-preview-name" id="lobbyPreviewName">Loading camera…</div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:center;gap:5px">
-          <button class="ctrl-btn" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
-            <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
-            </svg>
-            <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-              <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
-              <line x1="1" y1="1" x2="23" y2="23"/>
-            </svg>
-          </button>
-          <span style="font-size:11px;color:rgba(255,255,255,.4);font-weight:600">Cam</span>
-        </div>
-      </div>
-
-      <div class="form-group" style="margin-bottom:16px">
-        <label class="form-label">Your Name</label>
-        <input class="form-input" id="lobbyName" placeholder="Enter your display name" value="${prefillName}" />
-      </div>
-
-      <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center" id="lobbyJoinBtn" onclick="lobbyJoinOrKnock()">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
-        </svg>
-        Join Now
-      </button>
-
-      <div style="margin-top:14px;padding:10px 12px;background:rgba(255,255,255,.07);border-radius:10px;border:1px solid rgba(255,255,255,.12)">
-        <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Room Link</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span id="lobbyLinkText" style="flex:1;font-size:12px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:monospace"></span>
-          <button class="btn btn-ghost btn-sm" style="flex-shrink:0;gap:5px;padding:5px 10px" onclick="copyLobbyLink(this)">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
-              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-            </svg>
-            Copy
-          </button>
+        <div class="lobby-media-controls">
+          <div class="lobby-media-control">
+            <button class="ctrl-btn" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
+              <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+              <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <line x1="1" y1="1" x2="23" y2="23"/>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+                <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+              </svg>
+            </button>
+            <span>Mic</span>
+          </div>
+          <div class="lobby-media-control">
+            <button class="ctrl-btn" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
+              <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+              </svg>
+              <svg class="icon-off" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </button>
+            <span>Cam</span>
+          </div>
         </div>
       </div>
-      <a href="/" class="btn btn-ghost btn-lg" style="width:100%;justify-content:center;margin-top:10px">← Back to Dashboard</a>
+
+      <div class="lobby-details-pane">
+        <div class="lobby-setup-scroll">
+          <div class="lobby-header">
+            <div class="sb-logo-icon lobby-header-icon">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white" stroke-width="2.5">
+                <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
+              </svg>
+            </div>
+            <h2 id="lobbyTitle">Ready to join?</h2>
+            <p id="lobbySubtitle">Room: <strong>${safeRoomId}</strong></p>
+            <div id="lobbyRoleBadge" class="lobby-role-badge" style="display:none">
+              <span></span>
+            </div>
+          </div>
+
+          <div class="form-group lobby-name-field">
+            <label class="form-label">Your Name</label>
+            <input class="form-input" id="lobbyName" placeholder="Enter your display name" value="${prefillName}" />
+          </div>
+
+          <div class="lobby-link-block">
+            <div class="lobby-link-label">Room Link</div>
+            <div class="lobby-link-url" id="lobbyLinkText"></div>
+            <button class="btn btn-ghost btn-sm lobby-link-copy" onclick="copyLobbyLink(this)">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <a href="/" class="lobby-back-link">← Back to Dashboard</a>
+        </div>
+
+        <div class="lobby-actions">
+          <button class="btn btn-primary btn-lg lobby-join-btn" id="lobbyJoinBtn" onclick="lobbyJoinOrKnock()">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.845v6.31a1 1 0 0 1-1.447.894L15 14M5 18h8a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z"/>
+            </svg>
+            Join Now
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ── Waiting State (private meeting, knocking) ──────────────────────── -->
@@ -525,7 +622,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         <div style="width:8px;height:8px;border-radius:50%;background:#D15000;animation:dotPulse 1.4s ease-in-out .2s infinite"></div>
         <div style="width:8px;height:8px;border-radius:50%;background:#D15000;animation:dotPulse 1.4s ease-in-out .4s infinite"></div>
       </div>
-      <p style="font-size:15px;font-weight:700;color:rgba(255,255,255,.85);margin-bottom:6px">Waiting for the host…</p>
+      <p id="lobbyWaitHeading" style="font-size:15px;font-weight:700;color:rgba(255,255,255,.85);margin-bottom:6px">Waiting for the host…</p>
+      <p id="lobbyWaitSub" style="font-size:13px;color:rgba(255,255,255,.4);margin-bottom:8px">Waiting for host approval</p>
       <p id="lobbyWaitTimer" style="font-size:13px;color:rgba(255,255,255,.4);margin-bottom:28px">0s</p>
       <button class="btn btn-ghost btn-lg" style="width:100%;justify-content:center" onclick="cancelKnock()">
         Cancel Request
@@ -548,7 +646,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         </svg>
         Try Again
       </button>
-      <a href="/" class="btn btn-ghost btn-lg" style="width:100%;justify-content:center">← Back to Dashboard</a>
+      <a href="/" class="lobby-back-link">← Back to Dashboard</a>
     </div>
 
   </div>
@@ -579,11 +677,11 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     </div>
 
     <!-- Link field with copy button -->
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
-      <div style="flex:1;display:flex;align-items:center;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:10px;padding:0 12px;height:42px;overflow:hidden">
-        <span id="inviteLinkText" style="font-size:13px;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;font-family:monospace"></span>
+    <div class="modal-link-row">
+      <div class="modal-link-field">
+        <span id="inviteLinkText"></span>
       </div>
-      <button id="copyLinkBtn" class="btn btn-primary" style="height:42px;border-radius:10px;padding:0 16px;gap:6px;flex-shrink:0" onclick="copyRoomLink()">
+      <button id="copyLinkBtn" class="btn btn-primary modal-link-copy" onclick="copyRoomLink()">
         <svg id="copyIcon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
           <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
         </svg>
@@ -595,17 +693,17 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     </div>
 
     <!-- Quick-share options -->
-    <div style="border-top:1px solid rgba(255,255,255,.08);padding-top:14px;margin-bottom:4px">
-      <p style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Or share via</p>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;gap:6px" onclick="shareViaEmail()">
+    <div class="modal-share-section">
+      <p class="modal-share-label">Or share via</p>
+      <div class="modal-share-row">
+        <button class="btn btn-ghost btn-sm modal-share-btn" onclick="shareViaEmail()">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
             <polyline points="22,6 12,13 2,6"/>
           </svg>
           Email
         </button>
-        <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;gap:6px" onclick="shareNative()">
+        <button class="btn btn-ghost btn-sm modal-share-btn" onclick="shareNative()">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
             <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
@@ -613,7 +711,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           </svg>
           Share
         </button>
-        <button class="btn btn-ghost btn-sm" style="flex:1;justify-content:center;gap:6px" onclick="openQrCode()">
+        <button class="btn btn-ghost btn-sm modal-share-btn" onclick="openQrCode()">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
             <rect x="3" y="14" width="7" height="7"/>
@@ -675,8 +773,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       </div>
       <!-- Admin: toggle -->
       <div id="infoPrivacyToggle" style="display:none;padding:14px">
-        <div style="display:flex;gap:10px">
-          <label id="infoPublicLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+        <div class="privacy-choice-row">
+          <label id="infoPublicLabel" class="privacy-choice">
             <input type="radio" name="infoPrivacy" value="public" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
             <div>
               <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
@@ -686,7 +784,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
               <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Anyone with the link joins directly</div>
             </div>
           </label>
-          <label id="infoPrivateLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+          <label id="infoPrivateLabel" class="privacy-choice">
             <input type="radio" name="infoPrivacy" value="private" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
             <div>
               <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
@@ -703,7 +801,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       </div>
     </div>
 
-    <div class="modal-footer" style="margin-top:4px">
+    <div class="modal-footer modal-footer-stack" style="margin-top:4px">
       <button class="btn btn-ghost" onclick="closeInfoModal()">Close</button>
       <button class="btn btn-primary" style="gap:6px" onclick="closeInfoModal();showInviteModal()">
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -740,8 +838,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         <div style="font-size:11px;color:rgba(255,255,255,.35);margin-top:2px">Control who can join this meeting</div>
       </div>
       <div id="settingsPrivacyToggle" style="padding:14px">
-        <div style="display:flex;gap:10px">
-          <label id="settingsPublicLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+        <div class="privacy-choice-row">
+          <label id="settingsPublicLabel" class="privacy-choice">
             <input type="radio" name="settingsPrivacy" value="public" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
             <div>
               <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
@@ -751,7 +849,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
               <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:2px">Anyone joins directly</div>
             </div>
           </label>
-          <label id="settingsPrivateLabel" style="flex:1;display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;border-radius:10px;border:1.5px solid rgba(255,255,255,.08);transition:all .2s">
+          <label id="settingsPrivateLabel" class="privacy-choice">
             <input type="radio" name="settingsPrivacy" value="private" style="accent-color:#D15000;margin-top:2px;flex-shrink:0" />
             <div>
               <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.85);display:flex;align-items:center;gap:6px">
@@ -892,12 +990,12 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
     <div class="smm-field">
       <label class="smm-label">Meeting Privacy</label>
-      <div style="display:flex;gap:16px;margin-top:4px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.75)">
+      <div class="privacy-choice-row smm-privacy-row">
+        <label class="privacy-choice smm-privacy-choice">
           <input type="radio" name="smmPrivacy" value="public" checked style="accent-color:#D15000" />
           <span><strong>Public</strong> — anyone with link joins directly</span>
         </label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:rgba(255,255,255,.75)">
+        <label class="privacy-choice smm-privacy-choice">
           <input type="radio" name="smmPrivacy" value="private" style="accent-color:#D15000" />
           <span><strong>Private</strong> — admit each person</span>
         </label>
@@ -912,20 +1010,20 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 </div>
 
 <!-- ── Waiting Room Panel (admin of private meeting) ─────────────────────── -->
-<div id="waitingPanel" style="display:none;position:fixed;right:16px;bottom:88px;width:320px;max-height:420px;background:#1C1F2E;border:1.5px solid rgba(255,255,255,.1);border-radius:16px;z-index:220;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.5)">
-  <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-    <div style="display:flex;align-items:center;gap:8px">
+<div id="waitingPanel" class="waiting-panel" style="display:none">
+  <div class="waiting-panel-header">
+    <div class="waiting-panel-title">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#D15000" stroke-width="2.5">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
         <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>
-      <span style="font-size:14px;font-weight:700;color:rgba(255,255,255,.9)">Waiting Room</span>
-      <span id="waitingPanelCount" style="font-size:11px;background:rgba(209,80,0,.2);color:#ff7b2e;padding:2px 8px;border-radius:20px;font-weight:700"></span>
+      <span>Waiting Room</span>
+      <span id="waitingPanelCount" class="waiting-panel-count"></span>
     </div>
-    <button id="waitingPanelClose" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:20px;line-height:1;padding:0 2px">&times;</button>
+    <button id="waitingPanelClose" class="waiting-panel-close" aria-label="Close waiting room">&times;</button>
   </div>
-  <div id="waitingList" style="flex:1;overflow-y:auto;min-height:60px">
-    <div style="text-align:center;padding:24px 16px;color:rgba(255,255,255,.35);font-size:13px">No one waiting</div>
+  <div id="waitingList" class="waiting-panel-list">
+    <div class="waiting-panel-empty">No one waiting</div>
   </div>
 </div>
 
@@ -958,7 +1056,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   let shareAudioActive = false;
   let livekitTrackSource = null;
   let panelOpen = false, currentPanel = 'chat';
-  let localStream = null, lobbyStream = null;
+  let lobbyStream = null;
   let treeInitialized = false;
   let hasJoinedMeeting = false;
   let heartbeatInterval = null;
@@ -1001,9 +1099,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   // ── Role-based UI setup ───────────────────────────────────────────────────
   if (isAdmin) {
     document.getElementById('treeCtrlGroup').style.display = '';
+    const moreTree = document.getElementById('moreTreeItem');
+    if (moreTree) moreTree.style.display = '';
     document.getElementById('tabPermissions').style.display = '';
     if (currentPrivacy === 'private') {
       document.getElementById('waitingCtrlGroup').style.display = '';
+      const moreWaiting = document.getElementById('moreWaitingItem');
+      if (moreWaiting) moreWaiting.style.display = '';
     }
   }
 
@@ -1048,6 +1150,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   async function startLobbyPreview() {
     try {
       lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+      lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
       document.getElementById('lobbyVideo').srcObject = lobbyStream;
     } catch(e) {
       document.getElementById('lobbyPreviewName').textContent = 'Camera not available';
@@ -1058,16 +1162,88 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   window.addEventListener('resize', function() { updateLayout(); });
 
   function toggleLobbyMic() {
+    micEnabled = !micEnabled;
     if (lobbyStream) {
-      lobbyStream.getAudioTracks().forEach(t => t.enabled = !t.enabled);
-      document.getElementById('lobbyMicBtn').classList.toggle('off');
-     }
+      lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+    }
+    document.getElementById('lobbyMicBtn').classList.toggle('off', !micEnabled);
   }
   function toggleLobbyCam() {
+    camEnabled = !camEnabled;
     if (lobbyStream) {
-      lobbyStream.getVideoTracks().forEach(t => t.enabled = !t.enabled);
-      document.getElementById('lobbyCamBtn').classList.toggle('off');
+      lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
     }
+    document.getElementById('lobbyCamBtn').classList.toggle('off', !camEnabled);
+  }
+
+  function syncControlBarMediaButtons() {
+    const micBtn = document.getElementById('micBtn');
+    if (micBtn) {
+      micBtn.classList.toggle('off', !micEnabled);
+      const micOn = micBtn.querySelector('.icon-on');
+      const micOff = micBtn.querySelector('.icon-off');
+      if (micOn) micOn.style.display = micEnabled ? '' : 'none';
+      if (micOff) micOff.style.display = micEnabled ? 'none' : '';
+    }
+    const camBtn = document.getElementById('camBtn');
+    if (camBtn) {
+      camBtn.classList.toggle('off', !camEnabled);
+      const camOn = camBtn.querySelector('.icon-on');
+      const camOff = camBtn.querySelector('.icon-off');
+      if (camOn) camOn.style.display = camEnabled ? '' : 'none';
+      if (camOff) camOff.style.display = camEnabled ? 'none' : '';
+    }
+  }
+
+  function isCameraPub(pub) {
+    if (!pub) return false;
+    const src = pub.source;
+    return src === 'camera'
+      || (livekitTrackSource && src === livekitTrackSource.Camera);
+  }
+
+  function attachLocalCameraPreview(pub) {
+    const vid = document.getElementById('localVideo');
+    const placeholder = document.getElementById('selfPlaceholder');
+    if (!vid) return;
+    if (pub && pub.track) {
+      pub.track.attach(vid);
+      if (placeholder) placeholder.style.opacity = '0';
+    }
+  }
+
+  function clearLocalCameraPreview() {
+    const vid = document.getElementById('localVideo');
+    const placeholder = document.getElementById('selfPlaceholder');
+    if (vid && livekitRoom) {
+      try {
+        const lp = livekitRoom.localParticipant;
+        for (const pub of lp.videoTrackPublications.values()) {
+          if (isCameraPub(pub) && pub.track) pub.track.detach(vid);
+        }
+      } catch (_) { /* ignore */ }
+    }
+    if (vid) vid.srcObject = null;
+    if (placeholder) placeholder.style.opacity = '1';
+  }
+
+  function syncLocalCameraFromRoom() {
+    if (!livekitRoom) {
+      clearLocalCameraPreview();
+      return;
+    }
+    const lp = livekitRoom.localParticipant;
+    let camPub = null;
+    for (const pub of lp.videoTrackPublications.values()) {
+      if (isCameraPub(pub) && pub.track) { camPub = pub; break; }
+    }
+    if (!camPub) {
+      for (const pub of lp.trackPublications.values()) {
+        if (isCameraPub(pub) && pub.track) { camPub = pub; break; }
+      }
+    }
+    if (camPub) attachLocalCameraPreview(camPub);
+    else clearLocalCameraPreview();
   }
 
   // ── Join ──────────────────────────────────────────────────────────────────
@@ -1097,7 +1273,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     } catch (e) {
       showToast('Could not register join with server', 'error');
     }
-    await initLocalMedia();
+    lobbyStream = null;
+    syncControlBarMediaButtons();
     await connectToLiveKit();
     // Init tree for admins
     if (isAdmin) initTree();
@@ -1145,8 +1322,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           var d = await r.json();
           if (d.status === 'admitted' || d.status === 'entered') {
             clearInterval(_lobbyKnockPoll); clearInterval(_lobbyKnockTimer);
-            document.getElementById('lobbyTitle').textContent = "You've been admitted!";
-            document.getElementById('lobbySubtitle').textContent = 'Entering meeting…';
+            document.getElementById('lobbyWaitHeading').textContent = "You've been admitted!";
+            document.getElementById('lobbyWaitSub').textContent = 'Entering meeting…';
             setTimeout(function() { joinFromLobby(); }, 1000);
           } else if (d.status === 'rejected' || d.status === 'expired') {
             clearInterval(_lobbyKnockPoll); clearInterval(_lobbyKnockTimer);
@@ -1179,8 +1356,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     document.getElementById('lobbySetupState').style.display   = 'none';
     document.getElementById('lobbyWaitingState').style.display = '';
     document.getElementById('lobbyDeniedState').style.display  = 'none';
-    document.getElementById('lobbyTitle').textContent = 'Asking to join…';
-    document.getElementById('lobbySubtitle').textContent = 'Waiting for host approval';
+    document.getElementById('lobbyWaitHeading').textContent = 'Waiting for the host…';
+    document.getElementById('lobbyWaitSub').textContent = 'Waiting for host approval';
     _lobbyKnockStart = Date.now();
     document.getElementById('lobbyWaitTimer').textContent = '0s';
     _lobbyKnockTimer = setInterval(function() {
@@ -1194,8 +1371,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     document.getElementById('lobbySetupState').style.display   = 'none';
     document.getElementById('lobbyWaitingState').style.display = 'none';
     document.getElementById('lobbyDeniedState').style.display  = '';
-    document.getElementById('lobbyTitle').textContent = 'Entry not allowed';
-    document.getElementById('lobbySubtitle').textContent = '';
     clearInterval(_lobbyKnockTimer); _lobbyKnockTimer = null;
   }
 
@@ -1282,6 +1457,10 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       if (count > 1) {
         document.getElementById('presenceChip').style.display = 'flex';
         document.getElementById('presenceLabel').textContent = count + ' rooms';
+        const topPresence = document.getElementById('topbarPresenceItem');
+        const topPresenceLabel = document.getElementById('topbarPresenceLabel');
+        if (topPresence) topPresence.style.display = 'flex';
+        if (topPresenceLabel) topPresenceLabel.textContent = count + ' rooms';
         const tpc = document.getElementById('treePresenceChip');
         const tpl = document.getElementById('treePresenceLabel');
         if (tpc) tpc.classList.add('visible');
@@ -1367,51 +1546,52 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (!list) return;
 
     if (count === 0) {
-      list.innerHTML = '<div style="text-align:center;padding:24px 16px;color:rgba(255,255,255,.35);font-size:13px">No one waiting</div>';
+      list.innerHTML = '<div class="waiting-panel-empty">No one waiting</div>';
       return;
     }
 
     list.innerHTML = '';
     waiters.forEach(function(w) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05)';
+      row.className = 'waiting-item';
 
-      // Avatar
+      const top = document.createElement('div');
+      top.className = 'waiting-item-top';
+
       const av = document.createElement('div');
-      av.style.cssText = 'width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#D15000,#ff7b2e);display:flex;align-items:center;justify-content:center;font-weight:800;color:white;font-size:15px;flex-shrink:0';
+      av.className = 'waiting-item-avatar';
       av.textContent = (w.name || '?')[0].toUpperCase();
 
-      // Info
       const info = document.createElement('div');
-      info.style.flex = '1';
-      info.style.minWidth = '0';
+      info.className = 'waiting-item-info';
       const nameDiv = document.createElement('div');
-      nameDiv.style.cssText = 'font-size:13px;font-weight:600;color:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      nameDiv.className = 'waiting-item-name';
       nameDiv.textContent = w.name || 'Unknown';
       const timeDiv = document.createElement('div');
-      timeDiv.style.cssText = 'font-size:11px;color:rgba(255,255,255,.35);margin-top:1px';
+      timeDiv.className = 'waiting-item-time';
       timeDiv.textContent = waitingElapsed(w.knockedAt);
       info.appendChild(nameDiv);
       info.appendChild(timeDiv);
 
-      // Buttons
+      top.appendChild(av);
+      top.appendChild(info);
+
       const btnRow = document.createElement('div');
-      btnRow.style.cssText = 'display:flex;gap:5px;flex-shrink:0';
+      btnRow.className = 'waiting-item-actions';
 
       const admitBtn = document.createElement('button');
-      admitBtn.style.cssText = 'padding:5px 10px;border-radius:7px;border:none;background:#D15000;color:white;font-size:12px;font-weight:700;cursor:pointer';
+      admitBtn.className = 'waiting-admit-btn';
       admitBtn.textContent = 'Admit';
       admitBtn.addEventListener('click', function() { admitUser(w.waitingId, admitBtn, rejectBtn, nameDiv.textContent); });
 
       const rejectBtn = document.createElement('button');
-      rejectBtn.style.cssText = 'padding:5px 10px;border-radius:7px;border:1px solid rgba(239,68,68,.4);background:transparent;color:#EF4444;font-size:12px;font-weight:700;cursor:pointer';
+      rejectBtn.className = 'waiting-reject-btn';
       rejectBtn.textContent = 'Reject';
       rejectBtn.addEventListener('click', function() { rejectUser(w.waitingId, admitBtn, rejectBtn, nameDiv.textContent); });
 
       btnRow.appendChild(admitBtn);
       btnRow.appendChild(rejectBtn);
-      row.appendChild(av);
-      row.appendChild(info);
+      row.appendChild(top);
       row.appendChild(btnRow);
       list.appendChild(row);
     });
@@ -1653,15 +1833,18 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     p.appendChild(document.createTextNode(' as its admin.'));
 
     const btnRow = document.createElement('div');
+    btnRow.className = 'move-banner-actions';
     btnRow.style.cssText = 'display:flex;gap:10px;justify-content:center';
 
     const btnStay = document.createElement('button');
-    btnStay.style.cssText = 'padding:10px 20px;border-radius:10px;border:1.5px solid #E5E7EB;background:white;color:#6B7280;font-weight:700;cursor:pointer;font-size:14px';
+    btnStay.className = 'move-banner-btn';
+    btnStay.style.cssText = 'padding:10px 20px;border-radius:10px;border:1.5px solid #E5E7EB;background:white;color:#6B7280;font-weight:700;cursor:pointer;font-size:14px;flex:1';
     btnStay.textContent = 'Stay Here';
     btnStay.onclick = () => banner.remove();
 
     const btnMove = document.createElement('button');
-    btnMove.style.cssText = 'padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,#D15000,#ff7b2e);color:white;font-weight:700;cursor:pointer;font-size:14px';
+    btnMove.className = 'move-banner-btn move-banner-btn-primary';
+    btnMove.style.cssText = 'padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,#D15000,#ff7b2e);color:white;font-weight:700;cursor:pointer;font-size:14px;flex:1';
     btnMove.textContent = 'Move Me →';
     btnMove.onclick = () => acceptMove(nodeId);
 
@@ -1698,18 +1881,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       locked ? 'info' : 'success');
   }
 
-  // ── Local media ───────────────────────────────────────────────────────────
-  async function initLocalMedia() {
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      const vid = document.getElementById('localVideo');
-      vid.srcObject = localStream;
-      document.getElementById('selfPlaceholder').style.opacity = '0';
-      showToast('Camera and microphone connected', 'success');
-    } catch(e) {
-      showToast('Could not access camera/mic: ' + e.message, 'error');
-    }
-  }
+  // ── Local preview helpers are defined near lobby controls ─────────────────
 
   // ── LiveKit ───────────────────────────────────────────────────────────────
   async function connectToLiveKit() {
@@ -1731,12 +1903,18 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           removeRemoteTrack(track, participant);
         })
         .on(RoomEvent.LocalTrackPublished, (pub) => {
+          if (isCameraPub(pub)) {
+            attachLocalCameraPreview(pub);
+          }
           if (sharing && isScreenShareAudioPub(pub)) {
             shareAudioActive = true;
             updateShareAudioBanner();
           }
         })
         .on(RoomEvent.LocalTrackUnpublished, (pub) => {
+          if (isCameraPub(pub)) {
+            clearLocalCameraPreview();
+          }
           if (isScreenShareAudioPub(pub)) {
             shareAudioActive = false;
             updateShareAudioBanner();
@@ -1763,8 +1941,26 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           setTimeout(() => window.location.href = '/', 2000);
         });
       await livekitRoom.connect(url, token);
-      await livekitRoom.localParticipant.setMicrophoneEnabled(micEnabled);
-      await livekitRoom.localParticipant.setCameraEnabled(camEnabled);
+
+      // Enable mic and cam independently so a camera denial does not block audio
+      try {
+        await livekitRoom.localParticipant.setMicrophoneEnabled(micEnabled);
+      } catch (micErr) {
+        console.warn('[LiveKit] Microphone enable failed:', micErr);
+        micEnabled = false;
+        syncControlBarMediaButtons();
+        showToast('Could not access microphone: ' + (micErr.message || micErr), 'error');
+      }
+      try {
+        await livekitRoom.localParticipant.setCameraEnabled(camEnabled);
+      } catch (camErr) {
+        console.warn('[LiveKit] Camera enable failed:', camErr);
+        camEnabled = false;
+        syncControlBarMediaButtons();
+        showToast('Could not access camera: ' + (camErr.message || camErr), 'error');
+      }
+      syncLocalCameraFromRoom();
+      syncControlBarMediaButtons();
       showToast('Connected to ' + activeRoomId, 'success');
       updateParticipantCount();
     } catch(e) {
@@ -1875,25 +2071,40 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
     const tiles = document.querySelectorAll('.video-tile');
     const n = tiles.length;
+    const isPhone = window.innerWidth <= 560;
 
     if (isPresenting) {
-      const tileH = 110;
-      const cols  = n <= 2 ? 1 : 2;
-      grid.style.flex = '0 0 auto';
-      grid.style.width = (cols * 160 + 6) + 'px';
-      grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
-      grid.style.gridAutoRows = tileH + 'px';
-      grid.style.maxHeight = '100%';
+      if (isPhone) {
+        // Stack share on top; horizontal tile strip styled by CSS
+        grid.style.flex = '';
+        grid.style.width = '';
+        grid.style.gridTemplateColumns = '';
+        grid.style.gridAutoRows = '100px';
+        grid.style.maxHeight = '';
+      } else {
+        const tileH = 110;
+        const cols  = n <= 2 ? 1 : 2;
+        grid.style.flex = '0 0 auto';
+        grid.style.width = (cols * 160 + 6) + 'px';
+        grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+        grid.style.gridAutoRows = tileH + 'px';
+        grid.style.maxHeight = '100%';
+      }
     } else {
       grid.style.width = '';
       grid.style.flex = '';
       grid.style.gridAutoRows = '';
       grid.style.maxHeight = '';
-      if      (n <= 1) grid.style.gridTemplateColumns = '1fr';
-      else if (n <= 2) grid.style.gridTemplateColumns = '1fr 1fr';
-      else if (n <= 4) grid.style.gridTemplateColumns = '1fr 1fr';
-      else if (n <= 6) grid.style.gridTemplateColumns = 'repeat(3,1fr)';
-      else             grid.style.gridTemplateColumns = 'repeat(4,1fr)';
+      if (isPhone) {
+        if (n <= 1) grid.style.gridTemplateColumns = '1fr';
+        else        grid.style.gridTemplateColumns = '1fr 1fr';
+      } else {
+        if      (n <= 1) grid.style.gridTemplateColumns = '1fr';
+        else if (n <= 2) grid.style.gridTemplateColumns = '1fr 1fr';
+        else if (n <= 4) grid.style.gridTemplateColumns = '1fr 1fr';
+        else if (n <= 6) grid.style.gridTemplateColumns = 'repeat(3,1fr)';
+        else             grid.style.gridTemplateColumns = 'repeat(4,1fr)';
+      }
     }
   }
 
@@ -1935,26 +2146,45 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   // ── Controls ──────────────────────────────────────────────────────────────
-  function toggleMic() {
-    micEnabled = !micEnabled;
-    const btn = document.getElementById('micBtn');
-    btn.classList.toggle('off', !micEnabled);
-    btn.querySelector('.icon-on').style.display = micEnabled ? '' : 'none';
-    btn.querySelector('.icon-off').style.display = micEnabled ? 'none' : '';
-    if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
-    if (livekitRoom) livekitRoom.localParticipant.setMicrophoneEnabled(micEnabled);
-    showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
+  async function toggleMic() {
+    const next = !micEnabled;
+    if (!livekitRoom) {
+      micEnabled = next;
+      syncControlBarMediaButtons();
+      showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
+      return;
+    }
+    try {
+      await livekitRoom.localParticipant.setMicrophoneEnabled(next);
+      micEnabled = next;
+      syncControlBarMediaButtons();
+      showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
+    } catch (e) {
+      console.warn('[LiveKit] toggleMic failed:', e);
+      showToast('Could not change microphone: ' + (e.message || e), 'error');
+      syncControlBarMediaButtons();
+    }
   }
-  function toggleCamera() {
-    camEnabled = !camEnabled;
-    const btn = document.getElementById('camBtn');
-    btn.classList.toggle('off', !camEnabled);
-    btn.querySelector('.icon-on').style.display = camEnabled ? '' : 'none';
-    btn.querySelector('.icon-off').style.display = camEnabled ? 'none' : '';
-    if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
-    if (livekitRoom) livekitRoom.localParticipant.setCameraEnabled(camEnabled);
-    document.getElementById('selfPlaceholder').style.opacity = camEnabled ? '0' : '1';
-    showToast(camEnabled ? 'Camera on' : 'Camera off');
+  async function toggleCamera() {
+    const next = !camEnabled;
+    if (!livekitRoom) {
+      camEnabled = next;
+      syncControlBarMediaButtons();
+      showToast(camEnabled ? 'Camera on' : 'Camera off');
+      return;
+    }
+    try {
+      await livekitRoom.localParticipant.setCameraEnabled(next);
+      camEnabled = next;
+      if (camEnabled) syncLocalCameraFromRoom();
+      else clearLocalCameraPreview();
+      syncControlBarMediaButtons();
+      showToast(camEnabled ? 'Camera on' : 'Camera off');
+    } catch (e) {
+      console.warn('[LiveKit] toggleCamera failed:', e);
+      showToast('Could not change camera: ' + (e.message || e), 'error');
+      syncControlBarMediaButtons();
+    }
   }
   function isScreenShareAudioPub(pub) {
     if (!pub) return false;
@@ -2054,22 +2284,89 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
   }
 
-  // ── Panel ─────────────────────────────────────────────────────────────────
+  // ── Panel / visual viewport ───────────────────────────────────────────────
+  function syncAppHeight() {
+    if (!window.matchMedia('(max-width: 860px)').matches) {
+      document.documentElement.style.removeProperty('--app-height');
+      document.documentElement.style.removeProperty('--vv-bottom');
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) {
+      document.documentElement.style.setProperty('--vv-bottom', '0px');
+      return;
+    }
+    // Lift fixed UI from layout-viewport bottom up to the visible (visual) bottom.
+    const vvBottom = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    document.documentElement.style.setProperty('--vv-bottom', vvBottom + 'px');
+    document.documentElement.style.setProperty('--app-height', Math.round(vv.height) + 'px');
+  }
+
+  function syncPanelToViewport() {
+    const panel = document.getElementById('roomPanel');
+    if (!panel || !panelOpen || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const keyboardInset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    panel.style.setProperty('--kb-inset', keyboardInset + 'px');
+    panel.style.setProperty('--panel-bar', keyboardInset > 80 ? '0px' : '');
+  }
+
+  function onVisualViewportChange() {
+    syncAppHeight();
+    syncPanelToViewport();
+  }
+
+  function startViewportSync() {
+    syncPanelToViewport();
+  }
+
+  function stopViewportSync() {
+    const panel = document.getElementById('roomPanel');
+    if (panel) {
+      panel.style.removeProperty('--kb-inset');
+      panel.style.removeProperty('--panel-bar');
+    }
+  }
+
+  (function initAppHeightSync() {
+    syncAppHeight();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', onVisualViewportChange);
+      window.visualViewport.addEventListener('scroll', onVisualViewportChange);
+    }
+    window.addEventListener('resize', onVisualViewportChange);
+    window.addEventListener('orientationchange', function() {
+      setTimeout(onVisualViewportChange, 150);
+    });
+  })();
+
+  function closeRoomPanel() {
+    const panel  = document.getElementById('roomPanel');
+    const layout = document.getElementById('roomLayout');
+    if (!panel || !layout) return;
+    panel.style.display = 'none';
+    layout.classList.remove('panel-open');
+    panelOpen = false;
+    stopViewportSync();
+    document.getElementById('chatToggleBtn').classList.remove('active');
+    document.getElementById('peopleToggleBtn').classList.remove('active');
+    setTimeout(updateLayout, 50);
+  }
+
   function togglePanel(type) {
     const panel  = document.getElementById('roomPanel');
     const layout = document.getElementById('roomLayout');
     if (panelOpen && currentPanel === type) {
-      panel.style.display = 'none';
-      layout.classList.remove('panel-open');
-      panelOpen = false;
-    } else {
-      panel.style.display = 'flex';
-      layout.classList.add('panel-open');
-      panelOpen = true;
-      switchPanel(type);
+      closeRoomPanel();
+      return;
     }
+    panel.style.display = 'flex';
+    layout.classList.add('panel-open');
+    panelOpen = true;
+    switchPanel(type);
     document.getElementById('chatToggleBtn').classList.toggle('active', panelOpen && currentPanel === 'chat');
     document.getElementById('peopleToggleBtn').classList.toggle('active', panelOpen && currentPanel === 'participants');
+    startViewportSync();
     setTimeout(updateLayout, 50);
   }
   function switchPanel(type) {
@@ -2118,6 +2415,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       switchPanel('chat');
       document.getElementById('chatToggleBtn').classList.toggle('active', true);
       document.getElementById('peopleToggleBtn').classList.toggle('active', false);
+      startViewportSync();
       setTimeout(updateLayout, 50);
     }
   }
@@ -2376,8 +2674,25 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   // ── More menu ─────────────────────────────────────────────────────────────
   function toggleMore() {
+    closeTopbarMenu();
     const m = document.getElementById('moreMenu');
     m.style.display = m.style.display === 'none' ? 'block' : 'none';
+  }
+
+  // ── Topbar overflow menu (meeting chrome) ─────────────────────────────────
+  function closeTopbarMenu() {
+    const m = document.getElementById('topbarMenu');
+    const btn = document.getElementById('topbarMenuBtn');
+    if (m) m.style.display = 'none';
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+  function toggleTopbarMenu() {
+    document.getElementById('moreMenu').style.display = 'none';
+    const m = document.getElementById('topbarMenu');
+    const btn = document.getElementById('topbarMenuBtn');
+    const open = m.style.display === 'none';
+    m.style.display = open ? 'block' : 'none';
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
   function toggleWhiteboard() { showToast('Whiteboard coming soon', 'info'); }
   function showInfo()         { showInfoModal(); }
@@ -2485,8 +2800,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   function toggleRecord() {
     const btn = document.getElementById('recordBtn');
     btn.classList.toggle('recording');
-    showToast(btn.classList.contains('recording') ? 'Recording started' : 'Recording stopped',
-              btn.classList.contains('recording') ? 'success' : 'info');
+    const recording = btn.classList.contains('recording');
+    const topItem = document.getElementById('topbarRecordItem');
+    const topLabel = document.getElementById('topbarRecordLabel');
+    if (topItem) topItem.classList.toggle('recording', recording);
+    if (topLabel) topLabel.textContent = recording ? 'Recording…' : 'Record';
+    showToast(recording ? 'Recording started' : 'Recording stopped',
+              recording ? 'success' : 'info');
   }
   function showAudioMenu() { showToast('Audio device selection coming soon', 'info'); }
   function showVideoMenu() { showToast('Video device selection coming soon', 'info'); }
@@ -2632,7 +2952,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       }).catch(() => {});
     }
     if (livekitRoom) livekitRoom.disconnect();
-    if (localStream) localStream.getTracks().forEach(t => t.stop());
+    clearLocalCameraPreview();
     clearInterval(timerInterval);
     showToast('You left the meeting', 'info');
     setTimeout(() => window.location.href = '/', 1500);
@@ -2652,13 +2972,30 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   // ── Close menus on outside click ──────────────────────────────────────────
+  document.getElementById('moreMenu').addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
+  document.getElementById('topbarMenu').addEventListener('click', function(e) {
+    e.stopPropagation();
+  });
+  document.getElementById('roomLayout').addEventListener('pointerdown', function(e) {
+    if (!panelOpen) return;
+    if (!window.matchMedia('(max-width: 860px)').matches) return;
+    if (e.target.closest('.room-panel')) return;
+    closeRoomPanel();
+  });
   document.addEventListener('click', e => {
     if (!e.target.closest('#moreMenu') && !e.target.closest('#moreBtn'))
       document.getElementById('moreMenu').style.display = 'none';
-    if (!e.target.closest('#reactionsPicker') && !e.target.closest('#reactBtn'))
+    if (!e.target.closest('#topbarMenu') && !e.target.closest('#topbarMenuBtn'))
+      closeTopbarMenu();
+    if (!e.target.closest('#reactionsPicker') && !e.target.closest('#reactBtn') && !e.target.closest('.more-menu-item'))
       document.getElementById('reactionsPicker').style.display = 'none';
     if (!e.target.closest('#ringCmdDropdown') && !e.target.closest('#chatInput'))
       document.getElementById('ringCmdDropdown').style.display = 'none';
+  });
+  window.addEventListener('resize', function() {
+    if (!window.matchMedia('(max-width: 860px)').matches) closeTopbarMenu();
   });
 
   // ── Global error handlers (debug @ring) ────────────────────────────────────
@@ -2684,13 +3021,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
   }
   setInterval(animateMeter, 80);
-
-  setInterval(() => {
-    const rings = document.querySelectorAll('.speaking-ring');
-    rings.forEach(r => r.classList.remove('active'));
-    const active = rings[Math.floor(Math.random() * rings.length)];
-    if (active) active.classList.add('active');
-  }, 3000);
 </script>
 <script src="/public/ring-notifier.js?v=5"></script>
 </body>

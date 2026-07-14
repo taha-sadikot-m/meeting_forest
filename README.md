@@ -2,6 +2,8 @@
 
 A real-time meeting platform built with **Bun**, **LiveKit**, and **Memgraph**. Supports hierarchical meeting rooms — create sub-meetings as a tree, assign admins, and move participants between rooms live.
 
+> For the voice-agent knowledge base (what users can do on each page and what makes the platform unique), see **[PLATFORM.md](PLATFORM.md)**.
+
 ---
 
 ## Features
