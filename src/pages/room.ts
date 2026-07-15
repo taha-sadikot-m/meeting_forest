@@ -83,13 +83,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <div class="rec-dot" style="width:8px;height:8px;background:var(--red)"></div>
       <span class="room-top-btn-label" style="font-size:12px;font-weight:700">REC</span>
     </button>
-    <button class="btn btn-danger btn-sm room-top-leave" onclick="leaveRoom()" style="border-radius:8px;gap:6px">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-        <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-      </svg>
-      Leave
-    </button>
     <button class="room-top-btn room-top-menu-btn" id="topbarMenuBtn" title="Menu" onclick="toggleTopbarMenu()" aria-expanded="false" aria-controls="topbarMenu">
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/>
@@ -465,7 +458,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
 <!-- ── More options menu ───────────────────────────────────────────────────── -->
 <div class="more-menu" id="moreMenu" style="display:none">
-  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();toggleScreenShare()">
+  <button class="more-menu-item more-menu-mobile-only" id="moreShareItem" onclick="toggleMore();toggleScreenShare()">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="2" y="3" width="20" height="14" rx="2"/>
       <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
@@ -1258,7 +1251,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     document.getElementById('roomNameDisplay').textContent = activeRoomId;
     startTimer();
     // Render self in participants list
-    addParticipantRow(userName, true);
+    addParticipantRow(userName, true, USER_EMAIL, userName);
     // Record join in Memgraph
     try {
       const joinRes = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/join', {
@@ -1922,13 +1915,18 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         })
         .on(RoomEvent.ParticipantConnected, participant => {
           addParticipantTile(participant);
-          addParticipantRow(participant.name || participant.identity, false);
+          addParticipantRow(
+            participant.name || participant.identity,
+            false,
+            emailFromParticipant(participant),
+            participant.identity
+          );
           updateParticipantCount();
           showToast((participant.name || participant.identity) + ' joined', 'info');
         })
         .on(RoomEvent.ParticipantDisconnected, participant => {
           removeParticipantTile(participant.identity);
-          removeParticipantRow(participant.name || participant.identity);
+          removeParticipantRow(participant.identity);
           updateParticipantCount();
           showToast((participant.name || participant.identity) + ' left', 'info');
         })
@@ -1941,6 +1939,12 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           setTimeout(() => window.location.href = '/', 2000);
         });
       await livekitRoom.connect(url, token);
+
+      // Seed People list + tiles for peers already in the room (ParticipantConnected only fires for later joiners)
+      livekitRoom.remoteParticipants.forEach((p) => {
+        addParticipantTile(p);
+        addParticipantRow(p.name || p.identity, false, emailFromParticipant(p), p.identity);
+      });
 
       // Enable mic and cam independently so a camera denial does not block audio
       try {
@@ -1963,6 +1967,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       syncControlBarMediaButtons();
       showToast('Connected to ' + activeRoomId, 'success');
       updateParticipantCount();
+      updateLayout();
     } catch(e) {
       console.warn('[LiveKit] Demo mode:', e.message);
       showToast('Demo mode — LiveKit not configured', 'info');
@@ -2108,23 +2113,53 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
   }
 
+  function participantRowId(identity) {
+    return 'pr-' + String(identity || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  function emailFromParticipant(participant) {
+    if (!participant || !participant.metadata) return '';
+    try {
+      const meta = JSON.parse(participant.metadata);
+      return (meta && meta.email) ? String(meta.email) : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   /** Add a row to the People panel participants list */
-  function addParticipantRow(name, isSelf) {
+  function addParticipantRow(name, isSelf, email, identity) {
     const list = document.getElementById('participantsList');
     if (!list) return;
-    if (document.getElementById('pr-' + name)) return;
+    const idKey = identity || name;
+    const rowId = participantRowId(idKey);
+    if (document.getElementById(rowId)) return;
+    const displayName = name || idKey || '?';
     const colors = ['#7C3AED','#059669','#0284C7','#D97706','#DB2777','#D15000'];
-    const color  = colors[name.charCodeAt(0) % colors.length];
+    const color  = colors[displayName.charCodeAt(0) % colors.length];
     const div = document.createElement('div');
-    div.id = 'pr-' + name;
+    div.id = rowId;
+    div.dataset.identity = idKey;
     if (isSelf) div.dataset.self = '1';
     div.className = 'participant-row' + (isSelf ? ' host' : '');
+    const emailHtml = email
+      ? '<div class="participant-row-email">' + escapeHtml(email) + '</div>'
+      : '';
     div.innerHTML =
       '<div class="participant-avatar-sm" style="background:linear-gradient(135deg,' + color + ',' + color + '88)">' +
-        name[0].toUpperCase() +
+        escapeHtml(displayName[0] || '?').toUpperCase() +
       '</div>' +
       '<div class="participant-row-info">' +
-        '<div class="participant-row-name">' + (isSelf ? name + ' (You)' : name) + '</div>' +
+        '<div class="participant-row-name">' + escapeHtml(isSelf ? displayName + ' (You)' : displayName) + '</div>' +
+        emailHtml +
         '<div class="participant-row-status" style="color:var(--green);font-size:11px">● Joined</div>' +
       '</div>' +
       (isSelf ? '<div class="participant-row-actions"><span class="tag green" style="font-size:10px;padding:2px 7px">You</span></div>' : '');
@@ -2132,8 +2167,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   /** Remove a participant row from the People panel */
-  function removeParticipantRow(name) {
-    const el = document.getElementById('pr-' + name);
+  function removeParticipantRow(identityOrName) {
+    const el = document.getElementById(participantRowId(identityOrName));
     if (el) el.remove();
   }
 
@@ -2219,8 +2254,36 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }
   }
 
+  function canScreenShare() {
+    return !!(navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === 'function');
+  }
+
+  function screenShareUnsupportedMessage() {
+    return 'Screen sharing isn’t available in mobile browsers. Use a desktop browser to share.';
+  }
+
+  function applyScreenShareCapabilityUI() {
+    const supported = canScreenShare();
+    document.body.classList.toggle('no-screen-share', !supported);
+    const shareBtn = document.getElementById('shareBtn');
+    const moreShare = document.getElementById('moreShareItem');
+    if (shareBtn) {
+      shareBtn.classList.toggle('ctrl-btn-disabled', !supported);
+      shareBtn.setAttribute('aria-disabled', supported ? 'false' : 'true');
+      shareBtn.title = supported ? 'Share screen' : screenShareUnsupportedMessage();
+    }
+    if (moreShare) {
+      moreShare.classList.toggle('more-menu-item-disabled', !supported);
+      moreShare.setAttribute('aria-disabled', supported ? 'false' : 'true');
+    }
+  }
+
   async function startScreenShare() {
     if (!livekitRoom) { showToast('Not connected to room', 'error'); return; }
+    if (!canScreenShare()) {
+      showToast(screenShareUnsupportedMessage(), 'info');
+      return;
+    }
     try {
       const options = {
         audio: true,
@@ -2253,7 +2316,17 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       shareAudioActive = false;
       document.getElementById('shareBtn').classList.remove('active');
       document.getElementById('screenShareOverlay').style.display = 'none';
-      showToast('Screen share cancelled', 'info');
+      const name = (e && e.name) ? e.name : '';
+      const msg = (e && e.message) ? String(e.message) : '';
+      if (name === 'NotSupportedError' || /getDisplayMedia|not supported|unsupported/i.test(msg)) {
+        showToast(screenShareUnsupportedMessage(), 'info');
+      } else if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        showToast('Screen share permission denied', 'error');
+      } else if (name === 'AbortError' || name === 'NotFoundError') {
+        showToast('Screen share cancelled', 'info');
+      } else {
+        showToast('Could not start screen share', 'error');
+      }
     }
   }
 
@@ -2970,6 +3043,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     setTimeout(() => t.style.opacity = '0', 3000);
     setTimeout(() => t.remove(), 3400);
   }
+
+  applyScreenShareCapabilityUI();
 
   // ── Close menus on outside click ──────────────────────────────────────────
   document.getElementById('moreMenu').addEventListener('click', function(e) {

@@ -488,7 +488,7 @@ serve({
         const b = await req.json() as { room?: string; name?: string };
         const room = (b.room || "").trim(), name = (b.name || session.name).trim();
         if (!room) return json({ error: "room required" }, 400);
-        return json({ token: await generateToken(room, name), url: LIVEKIT_URL });
+        return json({ token: await generateToken(room, name, session.email), url: LIVEKIT_URL });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 

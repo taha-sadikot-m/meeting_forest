@@ -1,11 +1,13 @@
 import { AccessToken } from "livekit-server-sdk";
 import { config } from "../config";
 
-export async function generateToken(room: string, name: string): Promise<string> {
+export async function generateToken(room: string, name: string, email?: string): Promise<string> {
+  const meta = email ? JSON.stringify({ email }) : undefined;
   const at = new AccessToken(config.livekit.apiKey, config.livekit.apiSecret, {
     identity: name,
     name,
     ttl: "4h",
+    ...(meta ? { metadata: meta } : {}),
   });
   at.addGrant({
     roomJoin: true,
