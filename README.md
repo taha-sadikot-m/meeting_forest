@@ -135,3 +135,5 @@ Or connect to a hosted instance — set `MEMGRAPH_HOST` to its public IP.
 | `RESEND_API_KEY` | No* | — | Resend API key (* dev logs to console without it) |
 | `RESEND_EMAIL_ADDRESS` | No* | — | Verified sender address |
 | `APP_URL` | No | `http://localhost:3000` | Public URL for email links |
+| `ADMIN_EMAIL` | No* | _(empty)_ | Platform admin login email for `/admin/login` (* both admin vars required to enable login) |
+| `ADMIN_PASSWORD` | No* | _(empty)_ | Platform admin password (dedicated session; not a normal user account) |

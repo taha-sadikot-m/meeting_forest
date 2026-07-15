@@ -28,4 +28,8 @@ export const config = {
     model: "gemini-2.5-flash",
   },
   workerInternalSecret: process.env.WORKER_INTERNAL_SECRET || "dev-worker-secret",
+  admin: {
+    email: process.env.ADMIN_EMAIL || "",
+    password: process.env.ADMIN_PASSWORD || "",
+  },
 };

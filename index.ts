@@ -13,14 +13,24 @@ import { loginPage } from "./src/pages/login";
 import { registerPage } from "./src/pages/register";
 import { forgotPasswordPage } from "./src/pages/forgot-password";
 import { resetPasswordPage } from "./src/pages/reset-password";
+import { adminLoginPage } from "./src/pages/admin-login";
+import { adminDashboardPage } from "./src/pages/admin-dashboard";
+import { adminUsersPage } from "./src/pages/admin-users";
 import {
   createSession, getSession, destroySession,
   getSessionCookie, setSessionCookie, clearSessionCookie,
   generateSecureToken, hashPassword, verifyPassword,
   sendVerificationEmail, sendResetEmail, sendMeetingInviteEmail,
 } from "./src/auth";
+import {
+  requireAdmin, createAdminSession, destroyAdminSession,
+  getAdminSessionCookie, setAdminSessionCookie, clearAdminSessionCookie,
+  verifyAdminCredentials, isAdminLoginRateLimited, recordAdminLoginAttempt,
+  clearAdminLoginAttempts, clientIp,
+} from "./src/admin-auth";
 import { config } from "./src/config";
 import { runQuery } from "./src/db/memgraph";
+import { getAdminOverview, listAdminUsers, listAdminMeetings } from "./src/db/admin-queries";
 import { generateId, createDefaultAssistant } from "./src/db/ai-queries";
 import { generateToken } from "./src/livekit/tokens";
 import {
@@ -286,6 +296,87 @@ serve({
         );
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // ── Platform admin (env credentials; separate from user sessions) ─────────
+
+    if (path === "/admin/login") {
+      if (requireAdmin(req)) return redirect("/admin");
+      return html(adminLoginPage());
+    }
+
+    if (path === "/api/admin/login" && req.method === "POST") {
+      try {
+        const ip = clientIp(req);
+        if (isAdminLoginRateLimited(ip)) {
+          return json({ error: "Too many login attempts. Try again later." }, 429);
+        }
+        const b = await req.json() as { email?: string; password?: string };
+        const email = (b.email || "").trim();
+        const pw = b.password || "";
+        if (!email || !pw) return json({ error: "Email and password are required" }, 400);
+        const adminEmail = verifyAdminCredentials(email, pw);
+        if (!adminEmail) {
+          recordAdminLoginAttempt(ip);
+          return json({ error: "Invalid email or password" }, 401);
+        }
+        clearAdminLoginAttempts(ip);
+        const token = createAdminSession(adminEmail);
+        return json({ ok: true }, 200, { "Set-Cookie": setAdminSessionCookie(token) });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/admin/logout" && req.method === "POST") {
+      const token = getAdminSessionCookie(req);
+      if (token) destroyAdminSession(token);
+      return json({ ok: true }, 200, { "Set-Cookie": clearAdminSessionCookie() });
+    }
+
+    if (path === "/admin" || path === "/admin/") {
+      const admin = requireAdmin(req);
+      if (!admin) return redirect("/admin/login");
+      return html(adminDashboardPage({ email: admin.email }));
+    }
+
+    if (path === "/admin/users") {
+      const admin = requireAdmin(req);
+      if (!admin) return redirect("/admin/login");
+      return html(adminUsersPage({ email: admin.email }));
+    }
+
+    if (path === "/api/admin/overview" && req.method === "GET") {
+      if (!requireAdmin(req)) return json({ error: "Unauthorized" }, 401);
+      try {
+        return json(await getAdminOverview());
+      } catch (e) {
+        console.error("[admin/overview]", e);
+        return json({ error: String(e) }, 500);
+      }
+    }
+
+    if (path === "/api/admin/users" && req.method === "GET") {
+      if (!requireAdmin(req)) return json({ error: "Unauthorized" }, 401);
+      try {
+        const q = url.searchParams.get("q") || undefined;
+        const page = parseInt(url.searchParams.get("page") || "1", 10);
+        const limit = parseInt(url.searchParams.get("limit") || "25", 10);
+        return json(await listAdminUsers({ q, page, limit }));
+      } catch (e) {
+        console.error("[admin/users]", e);
+        return json({ error: String(e) }, 500);
+      }
+    }
+
+    if (path === "/api/admin/meetings" && req.method === "GET") {
+      if (!requireAdmin(req)) return json({ error: "Unauthorized" }, 401);
+      try {
+        const page = parseInt(url.searchParams.get("page") || "1", 10);
+        const limit = parseInt(url.searchParams.get("limit") || "25", 10);
+        return json(await listAdminMeetings({ page, limit }));
+      } catch (e) {
+        console.error("[admin/meetings]", e);
+        return json({ error: String(e) }, 500);
+      }
     }
 
     // ── Session check (protected routes) ─────────────────────────────────────
