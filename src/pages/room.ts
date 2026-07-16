@@ -1290,7 +1290,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       if (audioTrack) {
         try {
           const pub = await lp.publishTrack(audioTrack, { source: Track.Source.Microphone });
-          if (!micEnabled) await pub.setMuted(true);
+          if (!micEnabled) await pub.mute();
           audioHandled = true;
         } catch (micErr) {
           console.warn('[LiveKit] Lobby mic publish failed:', micErr);
@@ -1302,7 +1302,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       if (videoTrack) {
         try {
           const pub = await lp.publishTrack(videoTrack, { source: Track.Source.Camera });
-          if (!camEnabled) await pub.setMuted(true);
+          if (!camEnabled) await pub.mute();
           videoHandled = true;
         } catch (camErr) {
           console.warn('[LiveKit] Lobby camera publish failed:', camErr);
@@ -2370,21 +2370,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
       return;
     }
-    const micPub = getLocalMicPublication();
-    if (micPub) {
-      try {
-        await micPub.setMuted(!next);
-        micEnabled = next;
-        syncControlBarMediaButtons();
-        showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
-        return;
-      } catch (e) {
-        console.warn('[LiveKit] toggleMic mute failed:', e);
-        showToast(micToggleErrorMessage(e), 'error');
-        syncControlBarMediaButtons();
-        return;
-      }
-    }
     try {
       await livekitRoom.localParticipant.setMicrophoneEnabled(next);
       micEnabled = next;
@@ -2405,23 +2390,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       syncControlBarMediaButtons();
       showToast(camEnabled ? 'Camera on' : 'Camera off');
       return;
-    }
-    const camPub = getLocalCameraPublication();
-    if (camPub) {
-      try {
-        await camPub.setMuted(!next);
-        camEnabled = next;
-        if (camEnabled) syncLocalCameraFromRoom();
-        else clearLocalCameraPreview();
-        syncControlBarMediaButtons();
-        showToast(camEnabled ? 'Camera on' : 'Camera off');
-        return;
-      } catch (e) {
-        console.warn('[LiveKit] toggleCamera mute failed:', e);
-        showToast(mediaPermissionErrorMessage('camera', e), 'error');
-        syncControlBarMediaButtons();
-        return;
-      }
     }
     try {
       await livekitRoom.localParticipant.setCameraEnabled(next);
