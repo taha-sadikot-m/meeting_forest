@@ -1219,6 +1219,17 @@ body.no-screen-share #shareBtn {
   padding: 4px 12px;
   white-space: nowrap;
 }
+.lobby-permission-banner {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.35);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  text-align: center;
+}
 #lobbyWaitingState,
 #lobbyDeniedState {
   padding: 8px 0 4px;

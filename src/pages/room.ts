@@ -556,6 +556,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
             <span>Cam</span>
           </div>
         </div>
+        <div class="lobby-permission-banner" id="lobbyMicDeniedBanner" style="display:none" role="status">
+          Microphone is blocked for this site. In Chrome: tap the lock icon → Site settings → Allow microphone, then refresh.
+        </div>
       </div>
 
       <div class="lobby-details-pane">
@@ -1139,15 +1142,211 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     }, 1000);
   }
 
-  // ── Lobby camera ──────────────────────────────────────────────────────────
+  // ── Lobby camera / mic permission helpers ─────────────────────────────────
+  function isMediaPermissionError(e) {
+    if (!e) return false;
+    const name = e.name || '';
+    const msg = (e.message || String(e)).toLowerCase();
+    return name === 'NotAllowedError'
+      || name === 'PermissionDeniedError'
+      || msg.includes('permission denied')
+      || msg.includes('not allowed');
+  }
+
+  function mediaPermissionErrorMessage(kind, e) {
+    const device = kind === 'camera' ? 'Camera' : 'Microphone';
+    if (isMediaPermissionError(e)) {
+      return device + ' blocked. In Chrome: tap the lock icon → Site settings → Allow '
+        + (kind === 'camera' ? 'camera' : 'microphone') + ', then refresh.';
+    }
+    return 'Could not access ' + (kind === 'camera' ? 'camera' : 'microphone')
+      + ': ' + (e && (e.message || e));
+  }
+
+  function micToggleErrorMessage(e) {
+    if (isMediaPermissionError(e)) {
+      return 'Microphone blocked. In Chrome: tap the lock icon → Site settings → Allow microphone, then refresh.';
+    }
+    return 'Could not change microphone: ' + (e && (e.message || e));
+  }
+
+  function syncLobbyMediaAvailability() {
+    if (!lobbyStream) {
+      micEnabled = false;
+      camEnabled = false;
+      document.getElementById('lobbyMicBtn')?.classList.toggle('off', true);
+      document.getElementById('lobbyCamBtn')?.classList.toggle('off', true);
+      return;
+    }
+    const hasAudio = lobbyStream.getAudioTracks().length > 0;
+    const hasVideo = lobbyStream.getVideoTracks().length > 0;
+    if (!hasAudio && micEnabled) {
+      micEnabled = false;
+      showToast('Microphone not available for this session.', 'info');
+    }
+    if (!hasVideo && camEnabled) {
+      camEnabled = false;
+      showToast('Camera not available for this session.', 'info');
+    }
+    document.getElementById('lobbyMicBtn')?.classList.toggle('off', !micEnabled);
+    document.getElementById('lobbyCamBtn')?.classList.toggle('off', !camEnabled);
+  }
+
+  function handleLobbyMediaError(e) {
+    syncLobbyMediaAvailability();
+    const previewName = document.getElementById('lobbyPreviewName');
+    if (isMediaPermissionError(e)) {
+      if (previewName) previewName.textContent = 'Camera / mic blocked';
+      showToast(mediaPermissionErrorMessage('microphone', e), 'info');
+    } else if (previewName) {
+      previewName.textContent = 'Camera not available';
+    }
+    void probeMicPermission();
+  }
+
+  async function probeMicPermission() {
+    if (!navigator.permissions || !navigator.permissions.query) return;
+    try {
+      const status = await navigator.permissions.query({ name: 'microphone' });
+      const banner = document.getElementById('lobbyMicDeniedBanner');
+      const show = status.state === 'denied';
+      if (banner) banner.style.display = show ? 'block' : 'none';
+      status.onchange = function() {
+        if (banner) banner.style.display = status.state === 'denied' ? 'block' : 'none';
+      };
+    } catch (_) { /* Permissions API unsupported for microphone on this browser */ }
+  }
+
+  async function ensureLobbyMediaForJoin() {
+    const hasAudio = lobbyStream && lobbyStream.getAudioTracks().length > 0;
+    const hasVideo = lobbyStream && lobbyStream.getVideoTracks().length > 0;
+    const needAcquire = !lobbyStream
+      || (micEnabled && !hasAudio)
+      || (camEnabled && !hasVideo);
+    if (!needAcquire) {
+      syncLobbyMediaAvailability();
+      return;
+    }
+    try {
+      if (lobbyStream) {
+        lobbyStream.getTracks().forEach(t => t.stop());
+        lobbyStream = null;
+      }
+      lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+      lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
+      const lobbyVid = document.getElementById('lobbyVideo');
+      const overlay = document.getElementById('lobbyOverlay');
+      if (lobbyVid && overlay && overlay.style.display !== 'none') {
+        lobbyVid.srcObject = lobbyStream;
+      }
+      syncLobbyMediaAvailability();
+      void probeMicPermission();
+    } catch (e) {
+      handleLobbyMediaError(e);
+    }
+  }
+
+  function isMicPub(pub) {
+    if (!pub) return false;
+    const src = pub.source;
+    return src === 'microphone'
+      || (livekitTrackSource && src === livekitTrackSource.Microphone);
+  }
+
+  function getLocalMicPublication() {
+    if (!livekitRoom) return null;
+    for (const pub of livekitRoom.localParticipant.audioTrackPublications.values()) {
+      if (isMicPub(pub)) return pub;
+    }
+    return null;
+  }
+
+  function isCameraPub(pub) {
+    if (!pub) return false;
+    const src = pub.source;
+    return src === 'camera'
+      || (livekitTrackSource && src === livekitTrackSource.Camera);
+  }
+
+  function getLocalCameraPublication() {
+    if (!livekitRoom) return null;
+    for (const pub of livekitRoom.localParticipant.videoTrackPublications.values()) {
+      if (isCameraPub(pub)) return pub;
+    }
+    return null;
+  }
+
+  async function publishLobbyTracksToLiveKit(Track) {
+    const stream = lobbyStream;
+    const lp = livekitRoom.localParticipant;
+    let audioHandled = false;
+    let videoHandled = false;
+
+    if (stream) {
+      const audioTrack = stream.getAudioTracks()[0];
+      const videoTrack = stream.getVideoTracks()[0];
+
+      if (audioTrack) {
+        try {
+          const pub = await lp.publishTrack(audioTrack, { source: Track.Source.Microphone });
+          if (!micEnabled) await pub.setMuted(true);
+          audioHandled = true;
+        } catch (micErr) {
+          console.warn('[LiveKit] Lobby mic publish failed:', micErr);
+          micEnabled = false;
+          showToast(mediaPermissionErrorMessage('microphone', micErr), 'error');
+        }
+      }
+
+      if (videoTrack) {
+        try {
+          const pub = await lp.publishTrack(videoTrack, { source: Track.Source.Camera });
+          if (!camEnabled) await pub.setMuted(true);
+          videoHandled = true;
+        } catch (camErr) {
+          console.warn('[LiveKit] Lobby camera publish failed:', camErr);
+          camEnabled = false;
+          showToast(mediaPermissionErrorMessage('camera', camErr), 'error');
+        }
+      }
+
+      const lobbyVid = document.getElementById('lobbyVideo');
+      if (lobbyVid) lobbyVid.srcObject = null;
+      lobbyStream = null;
+    }
+
+    if (!audioHandled) {
+      try {
+        await lp.setMicrophoneEnabled(micEnabled);
+      } catch (micErr) {
+        console.warn('[LiveKit] Microphone enable failed:', micErr);
+        micEnabled = false;
+        showToast(mediaPermissionErrorMessage('microphone', micErr), 'error');
+      }
+    }
+
+    if (!videoHandled) {
+      try {
+        await lp.setCameraEnabled(camEnabled);
+      } catch (camErr) {
+        console.warn('[LiveKit] Camera enable failed:', camErr);
+        camEnabled = false;
+        showToast(mediaPermissionErrorMessage('camera', camErr), 'error');
+      }
+    }
+  }
+
   async function startLobbyPreview() {
     try {
       lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
       lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
       document.getElementById('lobbyVideo').srcObject = lobbyStream;
+      syncLobbyMediaAvailability();
+      void probeMicPermission();
     } catch(e) {
-      document.getElementById('lobbyPreviewName').textContent = 'Camera not available';
+      handleLobbyMediaError(e);
     }
   }
   startLobbyPreview();
@@ -1186,13 +1385,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       if (camOn) camOn.style.display = camEnabled ? '' : 'none';
       if (camOff) camOff.style.display = camEnabled ? 'none' : '';
     }
-  }
-
-  function isCameraPub(pub) {
-    if (!pub) return false;
-    const src = pub.source;
-    return src === 'camera'
-      || (livekitTrackSource && src === livekitTrackSource.Camera);
   }
 
   function attachLocalCameraPreview(pub) {
@@ -1244,7 +1436,9 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const name = document.getElementById('lobbyName').value.trim();
     if (!name) { showToast('Please enter your name', 'error'); return; }
     userName = name;
-    if (lobbyStream) lobbyStream.getTracks().forEach(t => t.stop());
+    await ensureLobbyMediaForJoin();
+    const lobbyVid = document.getElementById('lobbyVideo');
+    if (lobbyVid) lobbyVid.srcObject = null;
     document.getElementById('lobbyOverlay').style.display = 'none';
     document.getElementById('selfName').textContent = userName;
     document.getElementById('selfAvatar').textContent = userName[0].toUpperCase();
@@ -1266,7 +1460,6 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     } catch (e) {
       showToast('Could not register join with server', 'error');
     }
-    lobbyStream = null;
     syncControlBarMediaButtons();
     await connectToLiveKit();
     // Init tree for admins
@@ -1280,14 +1473,15 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   // ── Lobby state machine (Google Meet-style) ───────────────────────────────
   var _lobbyKnockId = null, _lobbyKnockPoll = null, _lobbyKnockTimer = null, _lobbyKnockStart = null;
 
-  function lobbyJoinOrKnock() {
+  async function lobbyJoinOrKnock() {
     var name = document.getElementById('lobbyName').value.trim();
     if (!name) { showToast('Please enter your name', 'error'); return; }
     userName = name;
+    await ensureLobbyMediaForJoin();
     if (currentPrivacy === 'private' && !SERVER_PRE_ADMITTED) {
       askToJoin();
     } else {
-      joinFromLobby();
+      await joinFromLobby();
     }
   }
 
@@ -1946,23 +2140,8 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
         addParticipantRow(p.name || p.identity, false, emailFromParticipant(p), p.identity);
       });
 
-      // Enable mic and cam independently so a camera denial does not block audio
-      try {
-        await livekitRoom.localParticipant.setMicrophoneEnabled(micEnabled);
-      } catch (micErr) {
-        console.warn('[LiveKit] Microphone enable failed:', micErr);
-        micEnabled = false;
-        syncControlBarMediaButtons();
-        showToast('Could not access microphone: ' + (micErr.message || micErr), 'error');
-      }
-      try {
-        await livekitRoom.localParticipant.setCameraEnabled(camEnabled);
-      } catch (camErr) {
-        console.warn('[LiveKit] Camera enable failed:', camErr);
-        camEnabled = false;
-        syncControlBarMediaButtons();
-        showToast('Could not access camera: ' + (camErr.message || camErr), 'error');
-      }
+      // Publish lobby tracks when available (avoids second getUserMedia on mobile)
+      await publishLobbyTracksToLiveKit(Track);
       syncLocalCameraFromRoom();
       syncControlBarMediaButtons();
       showToast('Connected to ' + activeRoomId, 'success');
@@ -2185,9 +2364,26 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const next = !micEnabled;
     if (!livekitRoom) {
       micEnabled = next;
+      if (lobbyStream) lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+      document.getElementById('lobbyMicBtn')?.classList.toggle('off', !micEnabled);
       syncControlBarMediaButtons();
       showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
       return;
+    }
+    const micPub = getLocalMicPublication();
+    if (micPub) {
+      try {
+        await micPub.setMuted(!next);
+        micEnabled = next;
+        syncControlBarMediaButtons();
+        showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
+        return;
+      } catch (e) {
+        console.warn('[LiveKit] toggleMic mute failed:', e);
+        showToast(micToggleErrorMessage(e), 'error');
+        syncControlBarMediaButtons();
+        return;
+      }
     }
     try {
       await livekitRoom.localParticipant.setMicrophoneEnabled(next);
@@ -2196,7 +2392,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
     } catch (e) {
       console.warn('[LiveKit] toggleMic failed:', e);
-      showToast('Could not change microphone: ' + (e.message || e), 'error');
+      showToast(micToggleErrorMessage(e), 'error');
       syncControlBarMediaButtons();
     }
   }
@@ -2204,9 +2400,28 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const next = !camEnabled;
     if (!livekitRoom) {
       camEnabled = next;
+      if (lobbyStream) lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
+      document.getElementById('lobbyCamBtn')?.classList.toggle('off', !camEnabled);
       syncControlBarMediaButtons();
       showToast(camEnabled ? 'Camera on' : 'Camera off');
       return;
+    }
+    const camPub = getLocalCameraPublication();
+    if (camPub) {
+      try {
+        await camPub.setMuted(!next);
+        camEnabled = next;
+        if (camEnabled) syncLocalCameraFromRoom();
+        else clearLocalCameraPreview();
+        syncControlBarMediaButtons();
+        showToast(camEnabled ? 'Camera on' : 'Camera off');
+        return;
+      } catch (e) {
+        console.warn('[LiveKit] toggleCamera mute failed:', e);
+        showToast(mediaPermissionErrorMessage('camera', e), 'error');
+        syncControlBarMediaButtons();
+        return;
+      }
     }
     try {
       await livekitRoom.localParticipant.setCameraEnabled(next);
@@ -2217,7 +2432,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       showToast(camEnabled ? 'Camera on' : 'Camera off');
     } catch (e) {
       console.warn('[LiveKit] toggleCamera failed:', e);
-      showToast('Could not change camera: ' + (e.message || e), 'error');
+      showToast(mediaPermissionErrorMessage('camera', e), 'error');
       syncControlBarMediaButtons();
     }
   }

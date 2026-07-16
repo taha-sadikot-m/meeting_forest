@@ -5,6 +5,7 @@ import { homePage } from "./src/pages/home";
 import { roomPage } from "./src/pages/room";
 import { pastMeetingsPage } from "./src/pages/past-meetings";
 import { invitationsPage } from "./src/pages/invitations";
+import { messagesPage } from "./src/pages/messages";
 import { aiMeetingSetupPage } from "./src/pages/ai-meeting-setup";
 import { aiRepSettingsPage } from "./src/pages/ai-rep-settings";
 import { debriefsPage } from "./src/pages/debriefs";
@@ -49,6 +50,14 @@ import {
   signalParticipantJoined,
 } from "./src/api/ai-handlers";
 import { handleGetUserSettings, handlePatchUserSettings } from "./src/api/user-handlers";
+import {
+  handleCreateConversation,
+  handleInviteUser,
+  handleListConversations,
+  handleListMessages,
+  handleLookupUsers,
+  handleSendMessage,
+} from "./src/api/message-handlers";
 
 const PORT = config.port;
 const APP_URL = config.appUrl;
@@ -395,6 +404,10 @@ serve({
     if (path === "/meetings/invitations") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(invitationsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/messages") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(messagesPage({ name: session.name, email: session.email }));
     }
     if (path === "/ai-meeting") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
@@ -874,6 +887,72 @@ serve({
         const result = await handlePatchUserSettings(session, sessionToken, b);
         if (result.status !== 200) return json({ error: result.error }, result.status);
         return json({ settings: result.settings });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/messages/conversations" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const result = await handleListConversations(session);
+        return json({ conversations: result.conversations });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/messages/conversations" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handleCreateConversation(session, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ conversationId: result.conversationId, peer: result.peer });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const messagesConvMatch = path.match(/^\/api\/messages\/conversations\/([^/]+)\/messages$/);
+    if (messagesConvMatch && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const conversationId = decodeURIComponent(messagesConvMatch[1]);
+      const url = new URL(req.url);
+      try {
+        const result = await handleListMessages(session, conversationId, {
+          after: url.searchParams.get("after") ?? undefined,
+          before: url.searchParams.get("before") ?? undefined,
+          limit: url.searchParams.get("limit") ?? undefined,
+        });
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ messages: result.messages });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (messagesConvMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const conversationId = decodeURIComponent(messagesConvMatch[1]);
+      try {
+        const b = await req.json();
+        const result = await handleSendMessage(session, conversationId, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ message: result.message });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/messages/lookup" && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const q = new URL(req.url).searchParams.get("q") || "";
+      try {
+        const result = await handleLookupUsers(session, q);
+        return json({ users: result.users });
+      } catch (e) {
+        console.error("[messages] lookup failed:", e);
+        return json({ error: String(e) }, 500);
+      }
+    }
+
+    if (path === "/api/messages/invite" && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handleInviteUser(session, b);
+        return json({ ok: result.ok });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 

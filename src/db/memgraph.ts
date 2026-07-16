@@ -27,6 +27,10 @@ export async function initSchema() {
     "CREATE INDEX ON :AiRep(id)",
     "CREATE INDEX ON :AiRepContext(id)",
     "CREATE INDEX ON :MeetingDebrief(id)",
+    "CREATE INDEX ON :Conversation(id)",
+    "CREATE INDEX ON :Conversation(participantKey)",
+    "CREATE INDEX ON :DirectMessage(id)",
+    "CREATE INDEX ON :PlatformInvite(id)",
   ];
   for (const cypher of indexes) {
     try {

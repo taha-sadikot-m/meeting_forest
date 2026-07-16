@@ -179,6 +179,23 @@ export async function sendDebriefEmail(
     </p>`));
 }
 
+export async function sendPlatformInviteEmail(email: string, inviterName: string) {
+  const link = `${APP_URL}/register?email=${encodeURIComponent(email)}`;
+  await sendEmail(email, `${inviterName} invited you to Meeting Forest`, emailBase(`
+    <h2 style="font-size:22px;font-weight:700;margin:0 0 8px">You're invited to Meeting Forest</h2>
+    <p style="color:#6B7280;font-size:14px;line-height:1.6;margin:0 0 24px">
+      <strong>${inviterName}</strong> wants to chat with you on Meeting Forest — a video and messaging platform for teams.
+      Create your free account to start messaging.
+    </p>
+    <a href="${link}" style="display:inline-block;background:#D15000;color:white;text-decoration:none;
+       padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px">
+      Join Meeting Forest
+    </a>
+    <p style="font-size:12px;color:#9CA3AF;margin-top:16px">
+      Can't click? Copy: <a href="${link}" style="color:#D15000">${link}</a>
+    </p>`));
+}
+
 export async function sendResetEmail(email: string, name: string, token: string) {
   const link = `${APP_URL}/reset-password?token=${token}`;
   await sendEmail(email, "Reset your Meeting Forest password", emailBase(`
