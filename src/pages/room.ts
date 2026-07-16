@@ -1153,11 +1153,27 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       || msg.includes('not allowed');
   }
 
+  function isMediaDeviceBusyError(e) {
+    if (!e) return false;
+    const name = e.name || '';
+    const msg = (e.message || String(e)).toLowerCase();
+    return name === 'NotReadableError'
+      || name === 'AbortError'
+      || msg.includes('could not start video source')
+      || msg.includes('could not start audio source')
+      || msg.includes('device in use')
+      || msg.includes('in use');
+  }
+
   function mediaPermissionErrorMessage(kind, e) {
     const device = kind === 'camera' ? 'Camera' : 'Microphone';
     if (isMediaPermissionError(e)) {
       return device + ' blocked. In Chrome: tap the lock icon → Site settings → Allow '
         + (kind === 'camera' ? 'camera' : 'microphone') + ', then refresh.';
+    }
+    if (isMediaDeviceBusyError(e)) {
+      return device + ' is busy. Close other apps/tabs using the '
+        + (kind === 'camera' ? 'camera' : 'microphone') + ', then try again.';
     }
     return 'Could not access ' + (kind === 'camera' ? 'camera' : 'microphone')
       + ': ' + (e && (e.message || e));
@@ -1167,7 +1183,15 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (isMediaPermissionError(e)) {
       return 'Microphone blocked. In Chrome: tap the lock icon → Site settings → Allow microphone, then refresh.';
     }
+    if (isMediaDeviceBusyError(e)) {
+      return 'Microphone is busy. Close other apps/tabs using the microphone, then try again.';
+    }
     return 'Could not change microphone: ' + (e && (e.message || e));
+  }
+
+  function publicationHasLiveTrack(pub) {
+    return !!(pub && pub.track && pub.track.mediaStreamTrack
+      && pub.track.mediaStreamTrack.readyState === 'live');
   }
 
   function syncLobbyMediaAvailability() {
@@ -2371,7 +2395,16 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       return;
     }
     try {
-      await livekitRoom.localParticipant.setMicrophoneEnabled(next);
+      const micPub = getLocalMicPublication();
+      if (publicationHasLiveTrack(micPub)) {
+        if (next) await micPub.unmute();
+        else await micPub.mute();
+      } else {
+        if (micPub && micPub.track) {
+          try { await livekitRoom.localParticipant.unpublishTrack(micPub.track, true); } catch (_) {}
+        }
+        await livekitRoom.localParticipant.setMicrophoneEnabled(next);
+      }
       micEnabled = next;
       syncControlBarMediaButtons();
       showToast(micEnabled ? 'Microphone on' : 'Microphone muted');
@@ -2392,7 +2425,16 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       return;
     }
     try {
-      await livekitRoom.localParticipant.setCameraEnabled(next);
+      const camPub = getLocalCameraPublication();
+      if (publicationHasLiveTrack(camPub)) {
+        if (next) await camPub.unmute();
+        else await camPub.mute();
+      } else {
+        if (camPub && camPub.track) {
+          try { await livekitRoom.localParticipant.unpublishTrack(camPub.track, true); } catch (_) {}
+        }
+        await livekitRoom.localParticipant.setCameraEnabled(next);
+      }
       camEnabled = next;
       if (camEnabled) syncLocalCameraFromRoom();
       else clearLocalCameraPreview();
