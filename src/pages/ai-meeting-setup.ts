@@ -104,5 +104,6 @@ ${sidebarShellScripts(user)}
   loadMeetings();
 </script>
 <script src="/public/ring-notifier.js?v=5"></script>
+<script src="/public/agent-widget.js?v=2"></script>
 </body></html>`;
 }

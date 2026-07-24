@@ -1,4 +1,11 @@
-export function roomPage(roomId: string, user?: { name: string; email: string }, serverRole?: string, meetingPrivacy?: string, serverPreAdmitted?: boolean): string {
+export function roomPage(
+  roomId: string,
+  user?: { name: string; email: string },
+  serverRole?: string,
+  meetingPrivacy?: string,
+  serverPreAdmitted?: boolean,
+  agentHostEnabled?: boolean
+): string {
   const safeRoomId      = roomId || 'my-room';
   const prefillName     = (user?.name || "").replace(/`/g, "'").replace(/"/g, "&quot;");
   // Sanitize server-injected role (only allow known role strings)
@@ -6,6 +13,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   const injectedRole    = allowedRoles.includes(serverRole || '') ? (serverRole as string) : '';
   const isPrivateMeeting = meetingPrivacy === 'private';
   const preAdmitted      = serverPreAdmitted !== false;  // true unless explicitly false
+  const hasAgentHost     = !!agentHostEnabled;
   const userInitial      = (user?.name?.[0] || '?').toUpperCase();
   const userEmail        = user?.email || '';
   return /* html */`<!DOCTYPE html>
@@ -18,7 +26,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   <link rel="stylesheet" href="/public/room.css" />
   <link rel="stylesheet" href="/public/tree.css" />
 </head>
-<body class="room-body">
+<body class="room-body" data-meeting-id="${safeRoomId}">
 
 <!-- ── Topbar ─────────────────────────────────────────────────────────────── -->
 <header class="room-topbar">
@@ -43,6 +51,10 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
       <div class="tree-presence-dot"></div>
       <span id="presenceLabel">1 room</span>
     </div>
+    ${hasAgentHost ? `<div class="tree-presence-chip" id="agentHostBadge" title="AI Agent co-host is in this meeting — instruct with @agent in chat" style="background:#FFF3E9;border-color:#FED7AA;color:#D15000">
+      <div class="tree-presence-dot" style="background:#D15000"></div>
+      <span>AI Agent co-host</span>
+    </div>` : ""}
   </div>
 
   <div class="room-topbar-center">
@@ -241,7 +253,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           </div>
         </div>
         <div class="chat-input-wrap">
-          <input class="chat-input" id="chatInput" placeholder="Message everyone… (type @ for commands)" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
+          <input class="chat-input" id="chatInput" placeholder="${hasAgentHost ? 'Message everyone… (@agent to instruct the AI co-host)' : 'Message everyone… (type @ for commands)'}" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
           <button class="chat-emoji-btn" onclick="addEmoji()">😊</button>
         </div>
         <button class="chat-send-btn" onclick="sendChat()">
@@ -1029,6 +1041,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 <script src="/public/tree.js"></script>
 <script>
   const ROOM_ID              = ${JSON.stringify(safeRoomId)};
+  const HAS_AGENT_HOST       = ${hasAgentHost ? "true" : "false"};
   let currentPrivacy         = ${JSON.stringify(isPrivateMeeting ? 'private' : 'public')};
   const SERVER_PRE_ADMITTED  = ${preAdmitted};
   const USER_INITIAL         = ${JSON.stringify(userInitial)};
@@ -1044,6 +1057,14 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
   // If joined via @ring, start with mic+cam muted
   const _joinedMuted = urlParams.get('joined_muted') === 'true';
+
+  // Ensure Temporal agent-host workflow is running (needs bun run worker to join LiveKit)
+  if (HAS_AGENT_HOST && isAdmin) {
+    fetch('/api/meetings/' + encodeURIComponent(ROOM_ID) + '/ensure-agent-host', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(function() {});
+  }
 
   let livekitRoom = null;
   let activeRoomId = ROOM_ID;   // tracks which sub-meeting the user is currently in
@@ -1886,6 +1907,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     sel.innerHTML = '<option value="">Select a participant…</option>';
     if (livekitRoom && livekitRoom.remoteParticipants.size > 0) {
       livekitRoom.remoteParticipants.forEach((p) => {
+        if (isHiddenSystemBot(p.identity)) return;
         const opt = document.createElement('option');
         opt.value    = p.identity;
         opt.textContent = (p.name || p.identity);
@@ -2132,6 +2154,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           }
         })
         .on(RoomEvent.ParticipantConnected, participant => {
+          if (isHiddenSystemBot(participant.identity)) return;
           addParticipantTile(participant);
           addParticipantRow(
             participant.name || participant.identity,
@@ -2143,6 +2166,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
           showToast((participant.name || participant.identity) + ' joined', 'info');
         })
         .on(RoomEvent.ParticipantDisconnected, participant => {
+          if (isHiddenSystemBot(participant.identity)) return;
           removeParticipantTile(participant.identity);
           removeParticipantRow(participant.identity);
           updateParticipantCount();
@@ -2160,6 +2184,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
 
       // Seed People list + tiles for peers already in the room (ParticipantConnected only fires for later joiners)
       livekitRoom.remoteParticipants.forEach((p) => {
+        if (isHiddenSystemBot(p.identity)) return;
         addParticipantTile(p);
         addParticipantRow(p.name || p.identity, false, emailFromParticipant(p), p.identity);
       });
@@ -2178,6 +2203,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   }
 
   function handleRemoteTrack(track, participant) {
+    if (isHiddenSystemBot(participant.identity)) return;
     // Screen share tracks get their own large display area
     if (track.source === 'screen_share') {
       const area  = document.getElementById('remoteScreenArea');
@@ -2236,6 +2262,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     if (tile) tile.querySelectorAll('video,audio').forEach(el => { el.srcObject = null; });
   }
   function addParticipantTile(participant) {
+    if (isHiddenSystemBot(participant.identity)) return;
     if (!document.getElementById('tile-' + participant.identity)) createParticipantTile(participant);
   }
   function removeParticipantTile(identity) {
@@ -2320,6 +2347,11 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     return 'pr-' + String(identity || '').replace(/[^a-zA-Z0-9_-]/g, '_');
   }
 
+  /** Hide internal chat-listener bots from tiles / people list */
+  function isHiddenSystemBot(identity) {
+    return String(identity || '').startsWith('ai-listener-');
+  }
+
   function emailFromParticipant(participant) {
     if (!participant || !participant.metadata) return '';
     try {
@@ -2343,6 +2375,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     const list = document.getElementById('participantsList');
     if (!list) return;
     const idKey = identity || name;
+    if (isHiddenSystemBot(idKey)) return;
     const rowId = participantRowId(idKey);
     if (document.getElementById(rowId)) return;
     const displayName = name || idKey || '?';
@@ -2909,7 +2942,59 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     input.focus();
   }
   function escapeHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /** Safe markdown lite: escape first, then bold / code / links / lists. */
+  function renderMarkdown(md) {
+    var text = String(md || '');
+    var lines = text.split(/\\r?\\n/);
+    var html = [];
+    var inList = false;
+
+    function closeList() {
+      if (inList) {
+        html.push('</ul>');
+        inList = false;
+      }
+    }
+
+    function inlineFormat(line) {
+      var escaped = escapeHtml(line);
+      escaped = escaped.replace(new RegExp('\\x60([^\\x60]+)\\x60', 'g'), '<code>$1</code>');
+      escaped = escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+      escaped = escaped.replace(
+        /\\[([^\\]]+)\\]\\(([^)]+)\\)/g,
+        function (_, label, href) {
+          var safeHref = String(href || '').trim();
+          if (/^javascript:/i.test(safeHref)) return escapeHtml(label);
+          return '<a href="' + escapeHtml(safeHref) + '" rel="noopener">' + escapeHtml(label) + '</a>';
+        }
+      );
+      return escaped;
+    }
+
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var bullet = line.match(/^\\s*[-*]\\s+(.+)$/);
+      if (bullet) {
+        if (!inList) {
+          html.push('<ul>');
+          inList = true;
+        }
+        html.push('<li>' + inlineFormat(bullet[1]) + '</li>');
+        continue;
+      }
+      closeList();
+      if (!line.trim()) continue;
+      html.push('<p>' + inlineFormat(line) + '</p>');
+    }
+    closeList();
+    return '<div class="chat-md">' + (html.join('') || '<p></p>') + '</div>';
   }
 
   function appendChatMessage(name, msg) {
@@ -2925,7 +3010,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     avatarSpan.textContent = initial;
     const senderSpan = document.createElement('span');
     senderSpan.className = 'chat-sender';
-    senderSpan.textContent = escapeHtml(name);
+    senderSpan.textContent = name || 'Unknown';
     const timeSpan = document.createElement('span');
     timeSpan.className = 'chat-time';
     timeSpan.textContent = now;
@@ -2934,7 +3019,13 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
     meta.appendChild(timeSpan);
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
-    bubble.textContent = msg;
+    const isAgentMsg = name === 'AI Agent' || name === 'Meeting Host';
+    if (isAgentMsg) {
+      bubble.classList.add('chat-bubble-md');
+      bubble.innerHTML = renderMarkdown(msg);
+    } else {
+      bubble.textContent = msg;
+    }
     div.appendChild(meta);
     div.appendChild(bubble);
     container.appendChild(div);
@@ -3323,6 +3414,7 @@ export function roomPage(roomId: string, user?: { name: string; email: string },
   setInterval(animateMeter, 80);
 </script>
 <script src="/public/ring-notifier.js?v=5"></script>
+<script>window.__MF_MEETING_ID=${JSON.stringify(safeRoomId)};</script>
 </body>
 </html>`;
 }

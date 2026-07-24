@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
+mcp-server/.venv/
+mcp-server/uv.lock
 
 # Environment — never commit secrets
 .env
 .env.local
 .env.*.local
+mcp-server/.env
 
 # Bun
 bun.lockb

@@ -27,7 +27,13 @@ export const config = {
     apiKey: process.env.GEMINI_API_KEY || "",
     model: "gemini-2.5-flash",
   },
+  deepgram: {
+    apiKey: process.env.DEEPGRAM_API_KEY || "",
+    ttsModel: process.env.DEEPGRAM_TTS_MODEL || "aura-2-thalia-en",
+    sttModel: process.env.DEEPGRAM_STT_MODEL || "nova-2",
+  },
   workerInternalSecret: process.env.WORKER_INTERNAL_SECRET || "dev-worker-secret",
+  mcpServerUrl: process.env.MCP_SERVER_URL || "http://localhost:8100",
   admin: {
     email: process.env.ADMIN_EMAIL || "",
     password: process.env.ADMIN_PASSWORD || "",

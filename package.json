@@ -5,9 +5,11 @@
   "main": "index.ts",
   "scripts": {
     "start": "bun run index.ts",
+    "start:prod": "bun run scripts/start-prod.ts",
     "worker": "bun run src/temporal/worker.ts",
     "dev": "bun --hot run index.ts",
-    "dev:all": "bun run index.ts & bun run src/temporal/worker.ts"
+    "dev:all": "echo Run two terminals: npm run dev  AND  bun run worker",
+    "mcp": "cd mcp-server && uv run uvicorn app.main:app --host 0.0.0.0 --port 8100"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",
@@ -19,9 +21,11 @@
     "livekit-client": "^2.20.0",
     "livekit-server-sdk": "^2.9.0",
     "neo4j-driver": "^6.1.0",
-    "resend": "^6.14.0"
+    "resend": "^6.14.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1"
   }
 }

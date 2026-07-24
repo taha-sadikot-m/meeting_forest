@@ -99,14 +99,50 @@ APP_URL=http://localhost:3000
 ### Run
 
 ```bash
-# Development (hot reload)
+# Terminal 1 — HTTP app (hot reload)
 bun dev
+# or: npm run dev
 
-# Production
-bun start
+# Terminal 2 — Temporal worker (required for AI Agent co-host + AI Host / AI Rep)
+bun run worker
 ```
 
+The Temporal worker must use the same `.env.local` as the app (`TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, LiveKit, Gemini, Deepgram). Hosted Temporal alone is not enough — without `bun run worker`, workflows are started but never executed, so the AI Agent will not join LiveKit.
+
+**AI Agent co-host voice:** set `DEEPGRAM_API_KEY` so the agent speaks replies (Aura TTS) and accepts spoken commands (Nova STT), e.g. “agent list waiting”. In the meeting room use the built-in chat panel + voice — the floating agent overlay is disabled on `/room`.
+
+**Production (app + worker together):**
+
+```bash
+bun run start:prod
+```
+
+This launches the HTTP server and the Temporal worker in one process tree (used on Render free tier).
+
 Server starts on `http://localhost:3000` (or the port set in `PORT`).
+
+---
+
+## Deploy on Render (free tier)
+
+Use **one** Web Service — do not create a second app for the worker.
+
+1. Push this repo (auto-deploy is fine).
+2. In the Render dashboard, set **Start Command** to:
+   ```bash
+   ~/.bun/bin/bun run scripts/start-prod.ts
+   ```
+   (Git push alone will not change Start Command if it was set manually in the dashboard.)
+3. Set environment variables on that service, including:
+   - `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`
+   - `LIVEKIT_*`, `GEMINI_API_KEY`, `DEEPGRAM_API_KEY`
+   - `MEMGRAPH_*`, `WORKER_INTERNAL_SECRET`
+   - **`APP_URL`** = your public URL, e.g. `https://your-app.onrender.com` (not `localhost`)
+4. Keep your existing keep-alive cron pointing at this one service’s public URL.
+
+After deploy, logs should show both `Meeting Forest running on port …` and `[temporal-worker] Running on queue "meeting-forest"`.
+
+When the free service sleeps, both app and worker stop until the cron wakes it.
 
 ---
 
@@ -134,6 +170,11 @@ Or connect to a hosted instance — set `MEMGRAPH_HOST` to its public IP.
 | `MEMGRAPH_PASS` | No | _(empty)_ | Memgraph password |
 | `RESEND_API_KEY` | No* | — | Resend API key (* dev logs to console without it) |
 | `RESEND_EMAIL_ADDRESS` | No* | — | Verified sender address |
-| `APP_URL` | No | `http://localhost:3000` | Public URL for email links |
+| `APP_URL` | No | `http://localhost:3000` | Public URL for email links and worker → app internal APIs (must be the Render URL in production) |
+| `TEMPORAL_ADDRESS` | Yes* | `localhost:7233` | Temporal server host:port (* required for AI Agent / Host / Rep) |
+| `TEMPORAL_NAMESPACE` | No | `default` | Temporal namespace |
+| `TEMPORAL_API_KEY` | No | _(empty)_ | Temporal Cloud API key if required |
+| `DEEPGRAM_API_KEY` | No* | _(empty)_ | Deepgram API key for AI Agent voice (* TTS + spoken commands when set) |
+| `WORKER_INTERNAL_SECRET` | No | `dev-worker-secret` | Shared secret for worker → app internal APIs |
 | `ADMIN_EMAIL` | No* | _(empty)_ | Platform admin login email for `/admin/login` (* both admin vars required to enable login) |
 | `ADMIN_PASSWORD` | No* | _(empty)_ | Platform admin password (dedicated session; not a normal user account) |

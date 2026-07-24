@@ -467,3 +467,7 @@ html.sidebar-collapsed .app-body { margin-left: 66px; }
   transition: transform .18s;
 }
 .perm-toggle.on::after { transform: translateX(16px); }
+
+/* ── Floating AI Agent (public/agent-widget.js also injects these) ─────────── */
+/* z-index 9000: above app chrome, below ring overlay (99999); panel ~520x720 */
+#mfAgentRoot { z-index: 9000; }

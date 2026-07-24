@@ -10,6 +10,7 @@ import { aiMeetingSetupPage } from "./src/pages/ai-meeting-setup";
 import { aiRepSettingsPage } from "./src/pages/ai-rep-settings";
 import { debriefsPage } from "./src/pages/debriefs";
 import { settingsPage } from "./src/pages/settings";
+import { agentPage } from "./src/pages/agent";
 import { loginPage } from "./src/pages/login";
 import { registerPage } from "./src/pages/register";
 import { forgotPasswordPage } from "./src/pages/forgot-password";
@@ -19,7 +20,7 @@ import { adminDashboardPage } from "./src/pages/admin-dashboard";
 import { adminUsersPage } from "./src/pages/admin-users";
 import {
   createSession, getSession, destroySession,
-  getSessionCookie, setSessionCookie, clearSessionCookie,
+  getSessionCookie, getRequestSessionToken, setSessionCookie, clearSessionCookie,
   generateSecureToken, hashPassword, verifyPassword,
   sendVerificationEmail, sendResetEmail, sendMeetingInviteEmail,
 } from "./src/auth";
@@ -49,6 +50,10 @@ import {
   handleInternalParticipantStatus, handleInternalRingStatus,
   signalParticipantJoined,
 } from "./src/api/ai-handlers";
+import { handleAgentChat } from "./src/api/agent-handlers";
+import { enableAgentHostOnMeeting, isAgentHostEnabled } from "./src/api/agent-host-handlers";
+import { registerAgentHostWorkflow } from "./src/temporal/agent-host-registry";
+import { agentHostWorkflowId } from "./src/agent-host";
 import { handleGetUserSettings, handlePatchUserSettings } from "./src/api/user-handlers";
 import {
   handleCreateConversation,
@@ -389,7 +394,7 @@ serve({
     }
 
     // ── Session check (protected routes) ─────────────────────────────────────
-    const sessionToken = getSessionCookie(req);
+    const sessionToken = getRequestSessionToken(req);
     const session      = sessionToken ? getSession(sessionToken) : null;
 
     // Protected pages
@@ -425,13 +430,25 @@ serve({
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(settingsPage({ name: session.name, email: session.email }));
     }
+    if (path === "/agent") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(agentPage({ name: session.name, email: session.email }));
+    }
     if (path === "/room" || path.startsWith("/room/")) {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(req.url));
       const roomId = path.replace(/^\/room\/?/, "") || "";
       let serverRole: string | undefined;
       let meetingPrivacy = "public";
+      let agentHostEnabled = false;
 
       if (roomId) {
+        try {
+          agentHostEnabled = await isAgentHostEnabled(roomId);
+          if (agentHostEnabled) {
+            registerAgentHostWorkflow(roomId, agentHostWorkflowId(roomId));
+          }
+        } catch { /* non-critical */ }
+
         // 1. Check if user is creator
         let isCreator = false;
         try {
@@ -484,14 +501,14 @@ serve({
 
               if (!isSubAdmin) {
                 // Serve room page with pre-admitted=false so lobby shows "Ask to Join" flow
-                return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy, false));
+                return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy, false, agentHostEnabled));
               }
             }
           }
         }
       }
 
-      return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy));
+      return html(roomPage(roomId, { name: session.name, email: session.email }, serverRole, meetingPrivacy, true, agentHostEnabled));
     }
 
     // ── Token API (protected) ─────────────────────────────────────────────────
@@ -510,7 +527,10 @@ serve({
     if (path === "/api/meetings" && req.method === "POST") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       try {
-        const b = await req.json() as { label?: string; adminName?: string; micDefault?: string; camDefault?: string; privacy?: string };
+        const b = await req.json() as {
+          label?: string; adminName?: string; micDefault?: string; camDefault?: string;
+          privacy?: string; bringAgent?: boolean;
+        };
         const label = (b.label || "").trim();
         if (!label) return json({ error: "label required" }, 400);
         const admin   = (b.adminName || session.name || "Host").trim();
@@ -518,14 +538,47 @@ serve({
         const id      = generateId(label);
         const now     = Date.now();
         const privacy = b.privacy === "private" ? "private" : "public";
+        const bringAgent = !!b.bringAgent;
         await runQuery(
           "MATCH (u:User {email: $email}) " +
           "CREATE (m:Meeting { id: $id, label: $label, adminName: $admin, status: 'active', " +
-          "privacy: $privacy, micDefault: $mic, camDefault: $cam, createdAt: $now }) " +
+          "privacy: $privacy, micDefault: $mic, camDefault: $cam, createdAt: $now, " +
+          "agentHostEnabled: $agentHost }) " +
           "CREATE (u)-[:CREATED {at: $now}]->(m)",
-          { email, admin, id, label, privacy, mic: b.micDefault || "allow", cam: b.camDefault || "allow", now }
+          {
+            email, admin, id, label, privacy,
+            mic: b.micDefault || "allow", cam: b.camDefault || "allow", now,
+            agentHost: bringAgent,
+          }
         );
-        return json({ ok: true, id, label, privacy });
+
+        let agentHost = bringAgent;
+        let agentHostError: string | undefined;
+        if (bringAgent) {
+          try {
+            await enableAgentHostOnMeeting({
+              meetingId: id,
+              label,
+              creatorEmail: session.email,
+              creatorName: session.name,
+            });
+            agentHost = true;
+          } catch (e) {
+            console.error("[meetings] failed to start agent host", e);
+            agentHostError = String(e);
+            // Flag is already set on CREATE; badge still shows, but Temporal may not be running.
+            agentHost = true;
+          }
+        }
+
+        return json({
+          ok: true,
+          id,
+          label,
+          privacy,
+          agentHost,
+          ...(agentHostError ? { agentHostError } : {}),
+        });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
@@ -539,7 +592,8 @@ serve({
           "OPTIONAL MATCH (p:User)-[r:PARTICIPATES_IN]->(m) WHERE r.leftAt IS NULL " +
           "WITH m, count(DISTINCT p) AS participants " +
           "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
-          "m.status AS status, m.createdAt AS createdAt, m.privacy AS privacy, participants " +
+          "m.status AS status, m.createdAt AS createdAt, m.privacy AS privacy, " +
+          "coalesce(m.agentHostEnabled, false) AS agentHostEnabled, participants " +
           "ORDER BY m.createdAt DESC LIMIT 50",
           { email: session.email }
         );
@@ -547,8 +601,73 @@ serve({
           id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
           status: r.get("status"), createdAt: r.get("createdAt"), participants: r.get("participants"),
           privacy: r.get("privacy") || "public",
+          agentHostEnabled: Boolean(r.get("agentHostEnabled")),
         })));
       } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const agentHostStatusMatch = path.match(/^\/api\/meetings\/([^/]+)\/agent-host$/);
+    if (agentHostStatusMatch && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(agentHostStatusMatch[1]);
+      try {
+        const enabled = await isAgentHostEnabled(mid);
+        return json({ meetingId: mid, agentHostEnabled: enabled });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const ensureAgentHostMatch = path.match(/^\/api\/meetings\/([^/]+)\/ensure-agent-host$/);
+    if (ensureAgentHostMatch && req.method === "POST") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(ensureAgentHostMatch[1]);
+      try {
+        const enabled = await isAgentHostEnabled(mid);
+        if (!enabled) {
+          return json({ error: "AI Agent co-host is not enabled for this meeting" }, 400);
+        }
+
+        let label = mid;
+        let creatorName = session.name || "Host";
+        let authorized = false;
+
+        const creatorRecs = await runQuery(
+          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) " +
+          "RETURN m.label AS label, m.adminName AS adminName",
+          { email: session.email, mid }
+        );
+        if (creatorRecs.length) {
+          authorized = true;
+          label = (creatorRecs[0].get("label") as string) || mid;
+          creatorName = session.name || (creatorRecs[0].get("adminName") as string) || "Host";
+        } else {
+          const adminRecs = await runQuery(
+            "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) " +
+            "WHERE r.role IN ['admin', 'superadmin'] AND r.leftAt IS NULL " +
+            "RETURN m.label AS label, m.adminName AS adminName",
+            { email: session.email, mid }
+          );
+          if (adminRecs.length) {
+            authorized = true;
+            label = (adminRecs[0].get("label") as string) || mid;
+            creatorName = session.name || (adminRecs[0].get("adminName") as string) || "Host";
+          }
+        }
+
+        if (!authorized) {
+          return json({ error: "Only meeting admins can ensure the AI Agent" }, 403);
+        }
+
+        const workflowId = await enableAgentHostOnMeeting({
+          meetingId: mid,
+          label,
+          creatorEmail: session.email,
+          creatorName,
+        });
+        return json({ ok: true, meetingId: mid, workflowId, agentHostEnabled: true });
+      } catch (e) {
+        console.error("[meetings] ensure-agent-host failed", e);
+        return json({ error: String(e) }, 500);
+      }
     }
 
     // GET /api/meetings/past — meetings the user created or participated in
@@ -841,6 +960,138 @@ serve({
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
+    // ── Internal agent-host APIs (Temporal worker) ─────────────────────────────
+    const requireWorker = (secret: string | null) =>
+      secret === config.workerInternalSecret;
+
+    const internalWaitingMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/waiting$/);
+    if (internalWaitingMatch && req.method === "GET") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalWaitingMatch[1]);
+      const users = waitingRooms.get(mid);
+      const waiting = users
+        ? Array.from(users.values()).filter(u => u.status === "waiting")
+        : [];
+      return json({
+        waiting: waiting.map(u => ({
+          waitingId: u.waitingId, name: u.name, email: u.email, knockedAt: u.knockedAt,
+        })),
+      });
+    }
+
+    const internalAdmitMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/admit\/([^/]+)$/);
+    if (internalAdmitMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalAdmitMatch[1]);
+      const wid = decodeURIComponent(internalAdmitMatch[2]);
+      const users = waitingRooms.get(mid);
+      const entry = users?.get(wid);
+      if (!entry) return json({ error: "Not found" }, 404);
+      entry.status = "admitted";
+      return json({ ok: true, waitingId: wid, status: "admitted" });
+    }
+
+    const internalAdmitAllMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/admit-all$/);
+    if (internalAdmitAllMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalAdmitAllMatch[1]);
+      const users = waitingRooms.get(mid);
+      let admitted = 0;
+      if (users) {
+        users.forEach(u => {
+          if (u.status === "waiting") {
+            u.status = "admitted";
+            admitted++;
+          }
+        });
+      }
+      return json({ ok: true, admitted });
+    }
+
+    const internalRejectMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/reject\/([^/]+)$/);
+    if (internalRejectMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalRejectMatch[1]);
+      const wid = decodeURIComponent(internalRejectMatch[2]);
+      const users = waitingRooms.get(mid);
+      const entry = users?.get(wid);
+      if (!entry) return json({ error: "Not found" }, 404);
+      entry.status = "rejected";
+      return json({ ok: true, waitingId: wid, status: "rejected" });
+    }
+
+    const internalInviteMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/invite$/);
+    if (internalInviteMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalInviteMatch[1]);
+      try {
+        const b = await req.json() as { email?: string; inviterName?: string; meetingLabel?: string };
+        const email = (b.email || "").trim().toLowerCase();
+        const inviterName = (b.inviterName || "AI Agent").trim();
+        const meetingLabel = (b.meetingLabel || mid).trim();
+        if (!email || !email.includes("@")) return json({ error: "valid email required" }, 400);
+        const link = `${APP_URL}/room/${encodeURIComponent(mid)}`;
+        await sendMeetingInviteEmail(email, inviterName, meetingLabel, link);
+        try {
+          const invRecs = await runQuery(
+            "MATCH (invited:User {email: $invitedEmail}) RETURN invited.email AS e",
+            { invitedEmail: email }
+          );
+          if (invRecs.length > 0) {
+            await runQuery(
+              "MATCH (invited:User {email: $invitedEmail}), (m:Meeting {id: $mid}) " +
+              "MERGE (invited)-[r:INVITED_TO]->(m) " +
+              "ON CREATE SET r.by = $inviterName, r.at = $now " +
+              "ON MATCH  SET r.by = $inviterName, r.at = $now",
+              { invitedEmail: email, mid, inviterName, now: Date.now() }
+            );
+          }
+        } catch { /* non-critical */ }
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const internalPrivacyMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/privacy$/);
+    if (internalPrivacyMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalPrivacyMatch[1]);
+      try {
+        const b = await req.json() as { privacy?: string };
+        const newPrivacy = b.privacy === "private" ? "private" : "public";
+        await runQuery(
+          "MATCH (m:Meeting {id: $mid}) SET m.privacy = $privacy",
+          { mid, privacy: newPrivacy }
+        );
+        if (newPrivacy === "public") {
+          const users = waitingRooms.get(mid);
+          if (users) users.forEach(u => { if (u.status === "waiting") u.status = "admitted"; });
+        }
+        return json({ ok: true, privacy: newPrivacy });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const internalEndMatch = path.match(/^\/api\/internal\/agent-host\/meetings\/([^/]+)\/end$/);
+    if (internalEndMatch && req.method === "POST") {
+      if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(internalEndMatch[1]);
+      try {
+        const { getTemporalClient } = await import("./src/temporal/client");
+        const { agentHostWorkflowId } = await import("./src/agent-host");
+        const { meetingOrchWorkflowId } = await import("./src/db/ai-queries");
+        const client = await getTemporalClient();
+        for (const wfId of [agentHostWorkflowId(mid), meetingOrchWorkflowId(mid)]) {
+          try {
+            await client.workflow.getHandle(wfId).signal("meetingEnded");
+          } catch { /* ignore missing workflows */ }
+        }
+        await runQuery(
+          "MATCH (m:Meeting {id: $mid}) SET m.status = 'ended'",
+          { mid }
+        );
+        return json({ ok: true });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
     if (path === "/api/ai-meetings" && req.method === "POST") {
       if (!session) return json({ error: "Unauthorized" }, 401);
       try {
@@ -1019,6 +1270,16 @@ serve({
       try {
         const result = await handleGetDebriefs(session);
         return json({ debriefs: result.debriefs });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    if (path === "/api/agent/chat" && req.method === "POST") {
+      if (!session || !sessionToken) return json({ error: "Unauthorized" }, 401);
+      try {
+        const b = await req.json();
+        const result = await handleAgentChat(session, sessionToken, b);
+        if (result.status !== 200) return json({ error: result.error }, result.status);
+        return json({ reply: result.reply, ui: result.ui, toolsUsed: result.toolsUsed });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 

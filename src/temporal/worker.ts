@@ -5,6 +5,7 @@ import { config } from "../config";
 import { disconnectAllBots } from "./livekit-bridge";
 import * as meetingActivities from "./activities/meeting";
 import * as repActivities from "./activities/rep";
+import * as agentHostActivities from "./activities/agent-host";
 
 async function shutdown() {
   await disconnectAllBots();
@@ -25,6 +26,7 @@ async function run() {
     activities: {
       ...meetingActivities,
       ...repActivities,
+      ...agentHostActivities,
     },
   });
 

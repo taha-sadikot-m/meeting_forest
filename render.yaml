@@ -3,7 +3,8 @@ services:
     name: meeting-forest
     runtime: node
     buildCommand: curl -fsSL https://bun.sh/install | bash && ~/.bun/bin/bun install
-    startCommand: ~/.bun/bin/bun run index.ts
+    # App + Temporal worker in one free-tier service
+    startCommand: ~/.bun/bin/bun run scripts/start-prod.ts
     envVars:
       - key: PORT
         value: 3000

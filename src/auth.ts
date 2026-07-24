@@ -53,6 +53,16 @@ export function getSessionCookie(req: Request): string | undefined {
   return req.headers.get("cookie")?.match(/(?:^|;\s*)mf_session=([^;]+)/)?.[1];
 }
 
+/** Session token from Authorization Bearer (MCP / agents) or mf_session cookie. */
+export function getRequestSessionToken(req: Request): string | undefined {
+  const auth = req.headers.get("authorization") || req.headers.get("Authorization");
+  if (auth) {
+    const match = auth.match(/^Bearer\s+(.+)$/i);
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+  return getSessionCookie(req);
+}
+
 export function setSessionCookie(token: string): string {
   return `mf_session=${token}; HttpOnly; SameSite=Lax; Max-Age=604800; Path=/`;
 }

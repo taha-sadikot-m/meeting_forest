@@ -23,6 +23,10 @@ export function hostBotIdentity(meetingId: string): string {
   return `ai-host-${meetingId}`;
 }
 
+export function agentBotIdentity(meetingId: string): string {
+  return `ai-agent-${meetingId}`;
+}
+
 export function repBotIdentity(ownerEmail: string, meetingId: string): string {
   return `ai-rep-${ownerEmail}-${meetingId}`;
 }

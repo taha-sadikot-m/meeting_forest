@@ -6,6 +6,7 @@ export type AppPage =
   | "ai-meeting"
   | "ai-rep"
   | "debriefs"
+  | "agent"
   | "settings";
 
 function linkClass(active: AppPage, page: AppPage): string {
@@ -77,6 +78,13 @@ export function appSidebar(user: { name: string; email: string }, active: AppPag
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
       <span>Messages</span>
+    </a>
+    <a href="/?agent=1" class="${linkClass(active, "agent")}" title="AI Agent" onclick="if(window.MFAgent){event.preventDefault();window.MFAgent.open();}">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2a4 4 0 0 1 4 4v1h1a3 3 0 0 1 0 6h-1v1a4 4 0 0 1-8 0v-1H7a3 3 0 0 1 0-6h1V6a4 4 0 0 1 4-4z"/>
+        <circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/>
+      </svg>
+      <span>AI Agent</span>
     </a>
     <a href="/ai-meeting" class="${linkClass(active, "ai-meeting")}" title="Scheduling">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
@@ -172,6 +180,17 @@ export function startMeetingModal(user: { name: string; email: string }, include
       <input class="form-input" id="newUserName" placeholder="e.g. Taha Sadikot" value="${safeName}" />
     </div>
     ${privacyBlock}
+    <div class="form-group" style="margin-top:4px">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:14px;color:var(--foreground)">
+        <input type="checkbox" id="bringAgentHost" style="margin-top:3px;accent-color:var(--primary)" />
+        <span>
+          <strong>Bring AI Agent into this meeting as co-host</strong>
+          <span style="font-size:12px;color:var(--muted-fg);display:block;margin-top:2px;line-height:1.4">
+            Agent joins the room, follows your chat instructions (<code>@agent</code>), and helps manage waiting room, invites, and rings.
+          </span>
+        </span>
+      </label>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeStartModal()">Cancel</button>
       <button class="btn btn-primary" onclick="startMeeting()">
@@ -211,6 +230,8 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
     el.hidden = false;
     el.classList.add('open');
     document.getElementById('newRoomName').value = '';
+    const bring = document.getElementById('bringAgentHost');
+    if (bring) bring.checked = false;
     document.getElementById('newRoomName').focus();
   }
   function closeStartModal() {
@@ -226,6 +247,8 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
     const rawName  = document.getElementById('newRoomName').value.trim();
     const userName = document.getElementById('newUserName').value.trim() || ${JSON.stringify(safeName)};
     ${privacyLine}
+    const bringEl = document.getElementById('bringAgentHost');
+    const bringAgent = !!(bringEl && bringEl.checked);
     if (!rawName) return showToast('Please enter a meeting name', 'error');
     const btn = document.querySelector('#startModal .btn-primary');
     btn.disabled = true; btn.textContent = 'Creating…';
@@ -233,11 +256,27 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
       const res = await fetch('/api/meetings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label: rawName, adminName: userName, privacy })
+        body: JSON.stringify({ label: rawName, adminName: userName, privacy, bringAgent })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error');
       closeStartModal();
+      if (bringAgent && data.agentHostError) {
+        showToast(
+          'Meeting created, but AI Agent workflow failed to start. Run bun run worker and check TEMPORAL_ADDRESS.',
+          'error'
+        );
+        setTimeout(() => { window.location.href = '/room/' + encodeURIComponent(data.id); }, 1800);
+        return;
+      }
+      if (bringAgent && data.agentHost === false) {
+        showToast(
+          'Meeting created. Start bun run worker so the AI Agent can join.',
+          'info'
+        );
+        setTimeout(() => { window.location.href = '/room/' + encodeURIComponent(data.id); }, 1500);
+        return;
+      }
       window.location.href = '/room/' + encodeURIComponent(data.id);
     } catch (err) {
       showToast('Could not create meeting: ' + err.message, 'error');
@@ -256,4 +295,12 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
     setTimeout(() => t.remove(), 3400);
   }
 </script>`;
+}
+
+/** Shared floating AI agent FAB + chat panel (gemini-2.5-flash via /api/agent/chat). */
+export function agentWidgetScript(meetingId?: string): string {
+  const meetingBoot = meetingId
+    ? `<script>window.__MF_MEETING_ID=${JSON.stringify(meetingId)};</script>`
+    : "";
+  return `${meetingBoot}<script src="/public/agent-widget.js?v=2"></script>`;
 }
