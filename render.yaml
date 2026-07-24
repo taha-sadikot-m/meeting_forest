@@ -2,11 +2,13 @@ services:
   - type: web
     name: meeting-forest
     runtime: node
-    buildCommand: curl -fsSL https://bun.sh/install | bash && ~/.bun/bin/bun install
-    # App + Temporal worker in one free-tier service
-    startCommand: ~/.bun/bin/bun run scripts/start-prod.ts
+    # Render supplies Bun when bun.lock / .bun-version / BUN_VERSION is present
+    buildCommand: bun install
+    startCommand: bun run scripts/start-prod.ts
     envVars:
       - key: PORT
         value: 3000
       - key: NODE_ENV
         value: production
+      - key: BUN_VERSION
+        value: "1.3.14"

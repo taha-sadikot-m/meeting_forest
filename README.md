@@ -125,24 +125,30 @@ Server starts on `http://localhost:3000` (or the port set in `PORT`).
 
 ## Deploy on Render (free tier)
 
-Use **one** Web Service — do not create a second app for the worker.
+Use **one** Web Service — do not create a second app for the worker. Render supplies Bun when `bun.lock` / `.bun-version` is present (or set `BUN_VERSION`).
 
 1. Push this repo (auto-deploy is fine).
-2. In the Render dashboard, set **Start Command** to:
-   ```bash
-   ~/.bun/bin/bun run scripts/start-prod.ts
-   ```
-   (Git push alone will not change Start Command if it was set manually in the dashboard.)
-3. Set environment variables on that service, including:
+2. In the Render dashboard, set:
+   - **Build Command:** `bun install`
+   - **Start Command:** `bun run scripts/start-prod.ts`
+   
+   Do **not** use `~/.bun/bin/bun` — that path is missing on Render’s run image (`No such file or directory`).
+   Git push alone will not change Build/Start Command if they were set manually in the dashboard.
+3. Optional env: `BUN_VERSION=1.3.14` (also set via [`.bun-version`](.bun-version) in the repo).
+4. Set environment variables on that service, including:
    - `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`
    - `LIVEKIT_*`, `GEMINI_API_KEY`, `DEEPGRAM_API_KEY`
    - `MEMGRAPH_*`, `WORKER_INTERNAL_SECRET`
-   - **`APP_URL`** = your public URL, e.g. `https://your-app.onrender.com` (not `localhost`)
-4. Keep your existing keep-alive cron pointing at this one service’s public URL.
+   - **`APP_URL`** = your public URL, e.g. `https://meeting-forest.onrender.com` (not `localhost`)
+5. Keep your existing keep-alive cron pointing at this one service’s public URL.
 
 After deploy, logs should show both `Meeting Forest running on port …` and `[temporal-worker] Running on queue "meeting-forest"`.
 
 When the free service sleeps, both app and worker stop until the cron wakes it.
+
+**Fallback** (only if `bun` is still not on PATH):  
+Build: `curl -fsSL https://bun.sh/install | bash && export PATH="$HOME/.bun/bin:$PATH" && bun install`  
+Start: `export PATH="$HOME/.bun/bin:$PATH" && bun run scripts/start-prod.ts`
 
 ---
 
