@@ -22,8 +22,8 @@ export function invitationsPage(user: { name: string; email: string }): string {
 
     .invite-card {
       background: white; border: 1.5px solid var(--border); border-radius: var(--r-xl);
-      padding: 20px 24px; margin-bottom: 12px;
-      display: flex; align-items: center; gap: 16px;
+      padding: 18px 22px; margin-bottom: 12px;
+      display: flex; align-items: flex-start; gap: 16px;
       transition: all .2s;
     }
     .invite-card:hover { border-color: rgba(209,80,0,.25); box-shadow: 0 4px 16px rgba(209,80,0,.07); }
@@ -32,12 +32,16 @@ export function invitationsPage(user: { name: string; email: string }): string {
       background: linear-gradient(135deg, #D15000, #ff7b2e);
       color: white; font-size: 18px; font-weight: 800;
       display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
+      flex-shrink: 0; margin-top: 2px;
     }
     .invite-info { flex: 1; min-width: 0; }
-    .invite-title { font-size: 15px; font-weight: 700; color: var(--foreground); }
-    .invite-meta  { font-size: 12px; color: var(--muted-fg); margin-top: 3px; }
-    .invite-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .invite-title { font-size: 15px; font-weight: 700; color: var(--foreground); line-height: 1.3; }
+    .invite-from  { font-size: 13px; color: var(--foreground); margin-top: 6px; line-height: 1.4; }
+    .invite-from strong { font-weight: 700; }
+    .invite-from-email { color: var(--muted-fg); font-weight: 500; }
+    .invite-meta  { font-size: 12px; color: var(--muted-fg); margin-top: 5px; line-height: 1.5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .invite-meta-sep { opacity: .45; }
+    .invite-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
     .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: var(--r-full); text-transform: uppercase; letter-spacing: .3px; }
     .badge-active { background: rgba(16,185,129,.12); color: #059669; }
@@ -55,6 +59,12 @@ export function invitationsPage(user: { name: string; email: string }): string {
     .modal h3 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
     .modal p  { font-size: 13px; color: var(--muted-fg); margin-bottom: 20px; }
     .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+    @media (max-width: 720px) {
+      .invite-card { flex-direction: column; align-items: stretch; }
+      .invite-actions { justify-content: stretch; }
+      .invite-actions .btn { flex: 1; }
+    }
   </style>
 </head>
 <body>
@@ -81,6 +91,14 @@ ${startMeetingModal(user, false)}
 ${sidebarShellScripts(user, false)}
 
 <script>
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function relativeTime(ts) {
     if (!ts) return '—';
     const diff = Date.now() - ts;
@@ -92,6 +110,16 @@ ${sidebarShellScripts(user, false)}
     const days = Math.floor(hrs / 24);
     if (days < 30) return days + 'd ago';
     return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function formatMeetingTime(ts) {
+    if (!ts) return null;
+    try {
+      return new Date(ts).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit'
+      });
+    } catch { return null; }
   }
 
   async function loadInvitations() {
@@ -116,25 +144,41 @@ ${sidebarShellScripts(user, false)}
 
       content.innerHTML = '';
       invites.forEach(inv => {
-        const initial = (inv.adminName || inv.label || '?')[0].toUpperCase();
+        const label = (inv.label && String(inv.label) !== 'null') ? String(inv.label) : 'Untitled meeting';
+        const fromName = (inv.invitedBy && String(inv.invitedBy) !== 'null')
+          ? String(inv.invitedBy)
+          : (inv.adminName && String(inv.adminName) !== 'null' ? String(inv.adminName) : 'someone');
+        const fromEmail = (inv.invitedByEmail && String(inv.invitedByEmail) !== 'null')
+          ? String(inv.invitedByEmail)
+          : '';
+        const meetingTime = formatMeetingTime(inv.meetingAt) || formatMeetingTime(inv.invitedAt);
+        const initial = (fromName !== 'someone' ? fromName : label).charAt(0).toUpperCase() || '?';
+        const isActive = inv.status === 'active';
+
         const card = document.createElement('div');
         card.className = 'invite-card';
-        const isActive = inv.status === 'active';
-        // Build static parts via innerHTML; action button added separately via DOM API
         card.innerHTML =
-          '<div class="invite-avatar">' + initial + '</div>' +
+          '<div class="invite-avatar">' + escapeHtml(initial) + '</div>' +
           '<div class="invite-info">' +
-            '<div class="invite-title">' + inv.label + '</div>' +
+            '<div class="invite-title">' + escapeHtml(label) + '</div>' +
+            '<div class="invite-from">' +
+              'From: <strong>' + escapeHtml(fromName) + '</strong>' +
+              (fromEmail ? ' <span class="invite-from-email">· ' + escapeHtml(fromEmail) + '</span>' : '') +
+            '</div>' +
             '<div class="invite-meta">' +
-              'Invited by <strong>' + (inv.invitedBy || 'someone') + '</strong>' +
-              ' · ' + relativeTime(inv.invitedAt) +
-              ' · ' + (isActive
+              (meetingTime
+                ? '<span>Meeting: <strong style="color:var(--foreground);font-weight:600">' + escapeHtml(meetingTime) + '</strong></span>'
+                : '') +
+              (meetingTime ? '<span class="invite-meta-sep">·</span>' : '') +
+              '<span>Invited ' + escapeHtml(relativeTime(inv.invitedAt)) + '</span>' +
+              '<span class="invite-meta-sep">·</span>' +
+              (isActive
                 ? '<span class="badge badge-active">● Live now</span>'
-                : '<span class="badge badge-ended">' + (inv.status || 'ended') + '</span>') +
+                : '<span class="badge badge-ended">' + escapeHtml(inv.status || 'ended') + '</span>') +
             '</div>' +
           '</div>' +
           '<div class="invite-actions"></div>';
-        // Action button built as DOM element to safely capture inv.id in a closure
+
         const actionsDiv = card.querySelector('.invite-actions');
         const actionBtn = document.createElement('button');
         actionBtn.className = isActive ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';

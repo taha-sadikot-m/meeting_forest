@@ -109,7 +109,11 @@ export function loginPage(opts: { redirect?: string; verified?: boolean; reset?:
       });
       const data = await res.json();
       if (!res.ok) {
-        showError(data.error || 'Sign in failed');
+        if (data.needsConfirmation) {
+          showError((data.error || 'Please verify your email') + ' — check your inbox for a code, or create/confirm your account on the register page.');
+        } else {
+          showError(data.error || 'Sign in failed');
+        }
         btn.disabled = false;
         btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg> Sign In';
         return;

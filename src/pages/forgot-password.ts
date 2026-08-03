@@ -23,7 +23,7 @@ export function forgotPasswordPage(): string {
     </a>
 
     <h1 class="auth-title">Reset password</h1>
-    <p class="auth-subtitle">Enter your email and we'll send a reset link</p>
+    <p class="auth-subtitle">Enter your email and we'll send a verification code</p>
 
     <form id="forgotForm" onsubmit="handleForgot(event)" novalidate>
       <div class="form-group">
@@ -35,15 +35,17 @@ export function forgotPasswordPage(): string {
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
           <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.28h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 9a16 16 0 0 0 6.08 6.08l.96-.96a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
         </svg>
-        Send Reset Link
+        Send Reset Code
       </button>
     </form>
 
-    <!-- Always show this after submit (no enumeration leak) -->
     <div class="success-state" id="successState">
       <div class="success-icon">✉</div>
       <h2 class="success-title">Check your email</h2>
-      <p class="success-msg">If an account exists for that email address, we've sent a password reset link. It expires in 1 hour.</p>
+      <p class="success-msg">If an account exists for that email, we've sent a password reset code. Enter it on the next screen.</p>
+      <a id="resetLink" href="/reset-password" class="btn-auth" style="display:flex;margin-top:20px;text-decoration:none;box-sizing:border-box">
+        Enter code &amp; new password
+      </a>
     </div>
 
     <p class="auth-footer">
@@ -56,16 +58,18 @@ export function forgotPasswordPage(): string {
 <script>
   async function handleForgot(e) {
     e.preventDefault();
+    const email = document.getElementById('email').value.trim();
     const btn = document.getElementById('submitBtn');
     btn.disabled = true; btn.textContent = 'Sending…';
     try {
       await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: document.getElementById('email').value.trim() }),
+        body: JSON.stringify({ email }),
       });
     } catch { /* swallow — always show success */ }
-    // Always show success regardless of whether email exists (no enumeration)
+    document.getElementById('resetLink').href =
+      '/reset-password?email=' + encodeURIComponent(email);
     document.getElementById('forgotForm').style.display = 'none';
     document.getElementById('successState').classList.add('show');
   }

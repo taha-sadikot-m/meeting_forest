@@ -22,8 +22,8 @@ export function registerPage(): string {
       <span class="auth-brand-name">Meeting Forest</span>
     </a>
 
-    <h1 class="auth-title">Create account</h1>
-    <p class="auth-subtitle">Start collaborating with Meeting Forest</p>
+    <h1 class="auth-title" id="pageTitle">Create account</h1>
+    <p class="auth-subtitle" id="pageSubtitle">Start collaborating with Meeting Forest</p>
 
     <div class="alert alert-error" id="errorAlert">
       <span class="alert-icon">✕</span>
@@ -79,35 +79,24 @@ export function registerPage(): string {
       </button>
     </form>
 
-    <!-- Success state (after registration) -->
-    <div class="success-state" id="successState">
+    <!-- Confirm code state (after Cognito signup) -->
+    <div class="success-state" id="confirmState">
       <div class="success-icon">✉</div>
       <h2 class="success-title">Check your email</h2>
-      <p class="success-msg" id="successMsg">We've sent a verification link to your email. Click it to activate your account.</p>
-    </div>
-
-    <!-- Unverified state (email exists but not verified) -->
-    <div class="success-state" id="unverifiedState">
-      <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#F59E0B,#D97706);display:flex;align-items:center;justify-content:center;margin:0 auto 18px">
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="white" stroke-width="2.5">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-      </div>
-      <h2 class="success-title">Email not verified</h2>
-      <p class="success-msg">This email is registered but hasn't been verified yet. Click below to resend the verification link.</p>
-      <button id="resendBtn" onclick="resendVerification()"
-        style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:20px;padding:13px 20px;background:#D15000;color:white;border:none;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:background .2s">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-          <polyline points="22,6 12,13 2,6"/>
-        </svg>
-        Resend Verification Email
+      <p class="success-msg" id="confirmMsg">We've sent a 6-digit verification code to your email.</p>
+      <form id="confirmForm" onsubmit="handleConfirm(event)" novalidate style="margin-top:20px;text-align:left">
+        <div class="form-group">
+          <label class="form-label" for="code">Verification code</label>
+          <input class="form-input" type="text" id="code" placeholder="6-digit code"
+                 required autocomplete="one-time-code" inputmode="numeric" maxlength="8"/>
+        </div>
+        <button class="btn-auth" type="submit" id="confirmBtn">Verify email</button>
+      </form>
+      <button type="button" id="resendBtn" onclick="resendVerification()"
+        style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:12px;padding:13px 20px;background:transparent;color:#D15000;border:1.5px solid #D15000;border-radius:10px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer">
+        Resend code
       </button>
       <p style="margin-top:16px;font-size:13px;color:#6B7280;text-align:center">
-        Wrong account? <a href="/register" style="color:#D15000;font-weight:600">Go back</a>
-        &nbsp;·&nbsp;
         <a href="/login" style="color:#D15000;font-weight:600">Sign in</a>
       </p>
     </div>
@@ -121,6 +110,12 @@ export function registerPage(): string {
 
 <script>
   let _pendingEmail = '';
+  let _pendingName = '';
+
+  (function prefillEmail() {
+    const q = new URLSearchParams(location.search).get('email');
+    if (q) document.getElementById('email').value = q;
+  })();
 
   function togglePw(id, btn) {
     const inp = document.getElementById(id);
@@ -153,12 +148,17 @@ export function registerPage(): string {
     document.getElementById('errorAlert').classList.add('show');
   }
 
-  function showUnverified(email) {
+  function showConfirm(email, name) {
     _pendingEmail = email;
+    _pendingName = name || '';
     document.getElementById('registerForm').style.display = 'none';
     document.getElementById('errorAlert').classList.remove('show');
     document.getElementById('registerFooter').style.display = 'none';
-    document.getElementById('unverifiedState').classList.add('show');
+    document.getElementById('pageTitle').style.display = 'none';
+    document.getElementById('pageSubtitle').style.display = 'none';
+    document.getElementById('confirmMsg').textContent =
+      "We've sent a 6-digit verification code to " + email + ". Enter it below to activate your account.";
+    document.getElementById('confirmState').classList.add('show');
   }
 
   async function resendVerification() {
@@ -172,11 +172,35 @@ export function registerPage(): string {
         body: JSON.stringify({ email: _pendingEmail }),
       });
     } catch {}
-    // Always show success (prevent enumeration)
-    document.getElementById('unverifiedState').classList.remove('show');
-    document.getElementById('successMsg').textContent =
-      'We resent the verification link to ' + _pendingEmail + '. Check your inbox.';
-    document.getElementById('successState').classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Code resent — check your inbox';
+    setTimeout(function() { btn.textContent = 'Resend code'; }, 3000);
+  }
+
+  async function handleConfirm(e) {
+    e.preventDefault();
+    document.getElementById('errorAlert').classList.remove('show');
+    const code = document.getElementById('code').value.trim();
+    if (!code) { showError('Enter the verification code'); return; }
+    const btn = document.getElementById('confirmBtn');
+    btn.disabled = true; btn.textContent = 'Verifying…';
+    try {
+      const res = await fetch('/api/auth/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _pendingEmail, code: code, name: _pendingName }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'Verification failed');
+        btn.disabled = false; btn.textContent = 'Verify email';
+        return;
+      }
+      window.location.href = '/login?verified=1';
+    } catch {
+      showError('Network error — please try again');
+      btn.disabled = false; btn.textContent = 'Verify email';
+    }
   }
 
   async function handleRegister(e) {
@@ -199,17 +223,18 @@ export function registerPage(): string {
       const data = await res.json();
       if (!res.ok) {
         if (data.unverified) {
-          showUnverified(email);
+          showConfirm(email, name);
         } else {
           showError(data.error || 'Registration failed');
           btn.disabled = false; btn.textContent = 'Create Account';
         }
         return;
       }
-      document.getElementById('registerForm').style.display = 'none';
-      document.getElementById('successMsg').textContent =
-        'We sent a verification link to ' + email + '. Click it to activate your account.';
-      document.getElementById('successState').classList.add('show');
+      if (data.needsConfirmation === false) {
+        window.location.href = '/login?verified=1';
+        return;
+      }
+      showConfirm(email, name);
     } catch {
       showError('Network error — please try again');
       btn.disabled = false; btn.textContent = 'Create Account';

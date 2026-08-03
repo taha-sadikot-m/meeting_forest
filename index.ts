@@ -21,9 +21,18 @@ import { adminUsersPage } from "./src/pages/admin-users";
 import {
   createSession, getSession, destroySession,
   getSessionCookie, getRequestSessionToken, setSessionCookie, clearSessionCookie,
-  generateSecureToken, hashPassword, verifyPassword,
-  sendVerificationEmail, sendResetEmail, sendMeetingInviteEmail,
+  sendMeetingInviteEmail,
 } from "./src/auth";
+import {
+  CognitoError,
+  cognitoSignUp,
+  cognitoConfirmSignUp,
+  cognitoResendConfirmationCode,
+  cognitoInitiateAuth,
+  cognitoForgotPassword,
+  cognitoConfirmForgotPassword,
+  cognitoTryResendForExisting,
+} from "./src/cognito";
 import {
   requireAdmin, createAdminSession, destroyAdminSession,
   getAdminSessionCookie, setAdminSessionCookie, clearAdminSessionCookie,
@@ -117,6 +126,47 @@ function redirect(location: string, headers?: Record<string, string>): Response 
   return new Response(null, { status: 302, headers: { Location: location, ...headers } });
 }
 
+/** Link Cognito identity to Memgraph :User by email (preserves existing meetings/data). */
+async function ensureMemgraphUser(
+  email: string,
+  name: string,
+  cognitoSub: string,
+): Promise<{ id: string; name: string; created: boolean }> {
+  const existing = await runQuery(
+    "MATCH (u:User {email: $email}) RETURN u.id AS id, u.name AS name",
+    { email }
+  );
+  if (existing.length) {
+    const id = existing[0].get("id") as string;
+    const existingName = (existing[0].get("name") as string) || name;
+    await runQuery(
+      "MATCH (u:User {email: $email}) SET u.cognitoSub = $cognitoSub, u.emailVerified = true",
+      { email, cognitoSub }
+    );
+    return { id, name: existingName, created: false };
+  }
+  const id = "user-" + Date.now().toString(36);
+  const now = Date.now();
+  await runQuery(
+    "CREATE (u:User { id: $id, name: $name, email: $email, cognitoSub: $cognitoSub, " +
+    "emailVerified: true, createdAt: $now, ringingEnabled: true })",
+    { id, name, email, cognitoSub, now }
+  );
+  await createDefaultAssistant(email, name);
+  return { id, name, created: true };
+}
+
+function cognitoJsonError(e: unknown): Response {
+  if (e instanceof CognitoError) {
+    const body: Record<string, unknown> = { error: e.message };
+    if (e.code === "UserNotConfirmedException") body.needsConfirmation = true;
+    if (e.code === "UsernameExistsException") body.exists = true;
+    return json(body, e.status);
+  }
+  console.error("[auth]", e);
+  return json({ error: String(e) }, 500);
+}
+
 // ── Server ────────────────────────────────────────────────────────────────────
 serve({
   port: PORT,
@@ -143,27 +193,16 @@ serve({
     if (path === "/register")        return html(registerPage());
     if (path === "/forgot-password") return html(forgotPasswordPage());
     if (path === "/reset-password") {
-      const token = url.searchParams.get("token") || "";
-      return html(resetPasswordPage(token));
+      const email = url.searchParams.get("email") || "";
+      return html(resetPasswordPage(email));
     }
 
-    // ── Email verification ────────────────────────────────────────────────────
+    // Legacy verification links → login (Cognito uses email codes now)
     if (path === "/verify-email") {
-      const token = url.searchParams.get("token") || "";
-      if (!token) return redirect("/login");
-      const recs = await runQuery(
-        "MATCH (u:User {verifyToken: $token}) RETURN u.id AS id, u.emailVerified AS ev",
-        { token }
-      );
-      if (!recs.length || recs[0].get("ev") === true) return redirect("/login");
-      await runQuery(
-        "MATCH (u:User {verifyToken: $token}) SET u.emailVerified = true, u.verifyToken = null",
-        { token }
-      );
       return redirect("/login?verified=1");
     }
 
-    // ── Auth API ──────────────────────────────────────────────────────────────
+    // ── Auth API (AWS Cognito) ────────────────────────────────────────────────
 
     // POST /api/auth/register
     if (path === "/api/auth/register" && req.method === "POST") {
@@ -176,31 +215,60 @@ serve({
           return json({ error: "Name, email and password are required" }, 400);
         if (pw.length < 8)
           return json({ error: "Password must be at least 8 characters" }, 400);
-        // Check email not already used
+
+        try {
+          const result = await cognitoSignUp(email, pw, name);
+          if (result.userConfirmed && result.userSub) {
+            await ensureMemgraphUser(email, name, result.userSub);
+            return json({ ok: true, needsConfirmation: false });
+          }
+          return json({ ok: true, needsConfirmation: true });
+        } catch (e) {
+          if (e instanceof CognitoError && e.code === "UsernameExistsException") {
+            const status = await cognitoTryResendForExisting(email);
+            if (status === "unconfirmed") {
+              return json({
+                error: "This email is registered but not yet verified.",
+                unverified: true,
+              }, 409);
+            }
+            return json({ error: "An account with this email already exists" }, 409);
+          }
+          return cognitoJsonError(e);
+        }
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    // POST /api/auth/confirm
+    if (path === "/api/auth/confirm" && req.method === "POST") {
+      try {
+        const b = await req.json() as { email?: string; code?: string; name?: string };
+        const email = (b.email || "").trim().toLowerCase();
+        const code  = (b.code  || "").trim();
+        const name  = (b.name  || "").trim();
+        if (!email || !code) return json({ error: "Email and verification code are required" }, 400);
+        await cognitoConfirmSignUp(email, code);
         const existing = await runQuery(
-          "MATCH (u:User {email: $email}) RETURN u.emailVerified AS ev", { email }
+          "MATCH (u:User {email: $email}) RETURN u.id AS id",
+          { email }
         );
         if (existing.length) {
-          const verified = existing[0].get("ev");
-          if (!verified) {
-            // Registered but never verified — signal the frontend to offer resend
-            return json({ error: "This email is registered but not yet verified.", unverified: true }, 409);
-          }
-          return json({ error: "An account with this email already exists" }, 409);
+          await runQuery(
+            "MATCH (u:User {email: $email}) SET u.emailVerified = true",
+            { email }
+          );
+        } else if (name) {
+          const id = "user-" + Date.now().toString(36);
+          const now = Date.now();
+          await runQuery(
+            "CREATE (u:User { id: $id, name: $name, email: $email, " +
+            "emailVerified: true, createdAt: $now, ringingEnabled: true })",
+            { id, name, email, now }
+          );
+          await createDefaultAssistant(email, name);
         }
-        const id          = "user-" + Date.now().toString(36);
-        const passwordHash = await hashPassword(pw);
-        const verifyToken  = generateSecureToken();
-        const now          = Date.now();
-        await runQuery(
-          "CREATE (u:User { id: $id, name: $name, email: $email, passwordHash: $passwordHash, " +
-          "emailVerified: false, verifyToken: $verifyToken, createdAt: $now, ringingEnabled: true })",
-          { id, name, email, passwordHash, verifyToken, now }
-        );
-        await createDefaultAssistant(email, name);
-        await sendVerificationEmail(email, name, verifyToken);
         return json({ ok: true });
-      } catch (e) { return json({ error: String(e) }, 500); }
+      } catch (e) { return cognitoJsonError(e); }
     }
 
     // POST /api/auth/resend-verification
@@ -209,22 +277,12 @@ serve({
         const b     = await req.json() as { email?: string };
         const email = (b.email || "").trim().toLowerCase();
         if (email) {
-          const recs = await runQuery(
-            "MATCH (u:User {email: $email}) RETURN u.name AS name, u.emailVerified AS ev",
-            { email }
-          );
-          // Only resend if account exists and is still unverified
-          if (recs.length && !recs[0].get("ev")) {
-            const name        = recs[0].get("name") as string;
-            const verifyToken = generateSecureToken();
-            await runQuery(
-              "MATCH (u:User {email: $email}) SET u.verifyToken = $verifyToken",
-              { email, verifyToken }
-            );
-            await sendVerificationEmail(email, name, verifyToken);
+          try {
+            await cognitoResendConfirmationCode(email);
+          } catch {
+            // Always OK — no enumeration
           }
         }
-        // Always respond OK — no enumeration
         return json({ ok: true });
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -236,23 +294,12 @@ serve({
         const email = (b.email || "").trim().toLowerCase();
         const pw    = b.password || "";
         if (!email || !pw) return json({ error: "Email and password are required" }, 400);
-        const recs = await runQuery(
-          "MATCH (u:User {email: $email}) RETURN u.id AS id, u.name AS name, " +
-          "u.passwordHash AS hash, u.emailVerified AS ev",
-          { email }
-        );
-        const GENERIC = "Invalid email or password";
-        if (!recs.length) return json({ error: GENERIC }, 401);
-        const row  = recs[0];
-        const hash = row.get("hash") as string;
-        const ok   = await verifyPassword(pw, hash);
-        if (!ok) return json({ error: GENERIC }, 401);
-        if (!row.get("ev")) return json({ error: "Please verify your email before signing in" }, 403);
-        const userId = row.get("id") as string;
-        const name   = row.get("name") as string;
-        const token  = createSession(userId, name, email);
+
+        const auth = await cognitoInitiateAuth(email, pw);
+        const user = await ensureMemgraphUser(auth.email, auth.name, auth.sub);
+        const token = createSession(user.id, user.name, auth.email);
         return json({ ok: true }, 200, { "Set-Cookie": setSessionCookie(token) } as any);
-      } catch (e) { return json({ error: String(e) }, 500); }
+      } catch (e) { return cognitoJsonError(e); }
     }
 
     // POST /api/auth/logout  (also GET /logout)
@@ -267,21 +314,11 @@ serve({
       try {
         const b     = await req.json() as { email?: string };
         const email = (b.email || "").trim().toLowerCase();
-        // Always respond ok (no enumeration)
         if (email) {
-          const recs = await runQuery(
-            "MATCH (u:User {email: $email}) RETURN u.id AS id, u.name AS name, u.emailVerified AS ev",
-            { email }
-          );
-          if (recs.length && recs[0].get("ev")) {
-            const name       = recs[0].get("name") as string;
-            const resetToken = generateSecureToken();
-            const expiry     = Date.now() + 3600_000; // 1 hour
-            await runQuery(
-              "MATCH (u:User {email: $email}) SET u.resetToken = $token, u.resetTokenExpiry = $expiry",
-              { email, token: resetToken, expiry }
-            );
-            await sendResetEmail(email, name, resetToken);
+          try {
+            await cognitoForgotPassword(email);
+          } catch (e) {
+            if (e instanceof CognitoError && e.code === "NotConfigured") return cognitoJsonError(e);
           }
         }
         return json({ ok: true });
@@ -291,25 +328,16 @@ serve({
     // POST /api/auth/reset-password
     if (path === "/api/auth/reset-password" && req.method === "POST") {
       try {
-        const b  = await req.json() as { token?: string; password?: string };
-        const tk = (b.token || "").trim();
-        const pw = b.password || "";
-        if (!tk || !pw) return json({ error: "Token and password are required" }, 400);
+        const b = await req.json() as { email?: string; code?: string; password?: string };
+        const email = (b.email || "").trim().toLowerCase();
+        const code  = (b.code  || "").trim();
+        const pw    = b.password || "";
+        if (!email || !code || !pw)
+          return json({ error: "Email, verification code and password are required" }, 400);
         if (pw.length < 8) return json({ error: "Password must be at least 8 characters" }, 400);
-        const recs = await runQuery(
-          "MATCH (u:User {resetToken: $token}) RETURN u.id AS id, u.resetTokenExpiry AS exp",
-          { token: tk }
-        );
-        if (!recs.length) return json({ error: "This reset link is invalid or has expired" }, 400);
-        const expiry = recs[0].get("exp") as number;
-        if (Date.now() > expiry) return json({ error: "This reset link has expired — please request a new one" }, 400);
-        const passwordHash = await hashPassword(pw);
-        await runQuery(
-          "MATCH (u:User {resetToken: $token}) SET u.passwordHash = $hash, u.resetToken = null, u.resetTokenExpiry = null",
-          { token: tk, hash: passwordHash }
-        );
+        await cognitoConfirmForgotPassword(email, code, pw);
         return json({ ok: true });
-      } catch (e) { return json({ error: String(e) }, 500); }
+      } catch (e) { return cognitoJsonError(e); }
     }
 
     // ── Platform admin (env credentials; separate from user sessions) ─────────
@@ -703,16 +731,30 @@ serve({
         const recs = await runQuery(
           "MATCH (u:User {email: $email})-[r:INVITED_TO]->(m:Meeting) " +
           "WHERE NOT ()-[:HAS_CHILD]->(m) " +
-          "RETURN m.id AS id, m.label AS label, m.adminName AS adminName, " +
-          "m.status AS status, m.createdAt AS createdAt, " +
-          "r.by AS invitedBy, r.at AS invitedAt " +
-          "ORDER BY r.at DESC LIMIT 50",
+          "OPTIONAL MATCH (creator:User)-[:CREATED]->(real:Meeting {id: m.id}) " +
+          "OPTIONAL MATCH (a:AiHostedMeeting {id: m.id}) " +
+          "WITH m, r, creator, a, " +
+          "  COALESCE(real.label, m.label, m.id) AS label, " +
+          "  COALESCE(real.adminName, m.adminName, creator.name, r.by) AS adminName, " +
+          "  COALESCE(real.status, m.status) AS status, " +
+          "  COALESCE(a.scheduledAt, real.createdAt, m.createdAt) AS meetingAt, " +
+          "  COALESCE(creator.name, r.by) AS invitedByName, " +
+          "  COALESCE(creator.email, r.byEmail) AS invitedByEmail, " +
+          "  r.at AS invitedAt " +
+          "RETURN DISTINCT m.id AS id, label, adminName, status, meetingAt, " +
+          "  invitedByName, invitedByEmail, invitedAt " +
+          "ORDER BY invitedAt DESC LIMIT 50",
           { email: session.email }
         );
         return json(recs.map(r => ({
-          id: r.get("id"), label: r.get("label"), adminName: r.get("adminName"),
-          status: r.get("status"), createdAt: r.get("createdAt"),
-          invitedBy: r.get("invitedBy"), invitedAt: r.get("invitedAt"),
+          id: r.get("id"),
+          label: r.get("label"),
+          adminName: r.get("adminName"),
+          status: r.get("status"),
+          meetingAt: r.get("meetingAt"),
+          invitedBy: r.get("invitedByName"),
+          invitedByEmail: r.get("invitedByEmail"),
+          invitedAt: r.get("invitedAt"),
         })));
       } catch (e) { return json({ error: String(e) }, 500); }
     }
@@ -903,9 +945,15 @@ serve({
             await runQuery(
               "MATCH (invited:User {email: $invitedEmail}), (m:Meeting {id: $mid}) " +
               "MERGE (invited)-[r:INVITED_TO]->(m) " +
-              "ON CREATE SET r.by = $inviterName, r.at = $now " +
-              "ON MATCH  SET r.by = $inviterName, r.at = $now",
-              { invitedEmail: email, mid, inviterName, now: Date.now() }
+              "ON CREATE SET r.by = $inviterName, r.byEmail = $inviterEmail, r.at = $now " +
+              "ON MATCH  SET r.by = $inviterName, r.byEmail = $inviterEmail, r.at = $now",
+              {
+                invitedEmail: email,
+                mid,
+                inviterName,
+                inviterEmail: (session?.email || "").trim().toLowerCase() || null,
+                now: Date.now(),
+              }
             );
           }
         } catch { /* non-critical — email was already sent */ }
@@ -1025,7 +1073,7 @@ serve({
       if (!requireWorker(req.headers.get("X-Worker-Secret"))) return json({ error: "Unauthorized" }, 401);
       const mid = decodeURIComponent(internalInviteMatch[1]);
       try {
-        const b = await req.json() as { email?: string; inviterName?: string; meetingLabel?: string };
+        const b = await req.json() as { email?: string; inviterName?: string; meetingLabel?: string; inviterEmail?: string };
         const email = (b.email || "").trim().toLowerCase();
         const inviterName = (b.inviterName || "AI Agent").trim();
         const meetingLabel = (b.meetingLabel || mid).trim();
@@ -1038,12 +1086,20 @@ serve({
             { invitedEmail: email }
           );
           if (invRecs.length > 0) {
+            let inviterEmail = (b.inviterEmail || "").trim().toLowerCase() || null;
+            if (!inviterEmail) {
+              const creatorRecs = await runQuery(
+                "MATCH (c:User)-[:CREATED]->(m:Meeting {id: $mid}) RETURN c.email AS email LIMIT 1",
+                { mid }
+              );
+              if (creatorRecs.length) inviterEmail = (creatorRecs[0].get("email") as string) || null;
+            }
             await runQuery(
               "MATCH (invited:User {email: $invitedEmail}), (m:Meeting {id: $mid}) " +
               "MERGE (invited)-[r:INVITED_TO]->(m) " +
-              "ON CREATE SET r.by = $inviterName, r.at = $now " +
-              "ON MATCH  SET r.by = $inviterName, r.at = $now",
-              { invitedEmail: email, mid, inviterName, now: Date.now() }
+              "ON CREATE SET r.by = $inviterName, r.byEmail = $inviterEmail, r.at = $now " +
+              "ON MATCH  SET r.by = $inviterName, r.byEmail = $inviterEmail, r.at = $now",
+              { invitedEmail: email, mid, inviterName, inviterEmail, now: Date.now() }
             );
           }
         } catch { /* non-critical */ }

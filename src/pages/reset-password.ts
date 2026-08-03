@@ -1,5 +1,5 @@
-export function resetPasswordPage(token: string): string {
-  const safeToken = token.replace(/[^a-f0-9]/gi, "");
+export function resetPasswordPage(email: string = ""): string {
+  const safeEmail = email.replace(/[^a-zA-Z0-9@._+-]/g, "").toLowerCase();
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,20 +24,24 @@ export function resetPasswordPage(token: string): string {
     </a>
 
     <h1 class="auth-title">Set new password</h1>
-    <p class="auth-subtitle">Choose a strong password for your account</p>
+    <p class="auth-subtitle">Enter the code from your email and choose a new password</p>
 
     <div class="alert alert-error" id="errorAlert">
       <span class="alert-icon">✕</span>
       <span id="errorMsg"></span>
     </div>
 
-    <div class="alert alert-error show" id="expiredAlert" style="display:none">
-      <span class="alert-icon">✕</span>
-      <span>This reset link has expired or is invalid. <a href="/forgot-password" style="color:inherit;text-decoration:underline">Request a new one.</a></span>
-    </div>
-
     <form id="resetForm" onsubmit="handleReset(event)" novalidate>
-      <input type="hidden" id="token" value="${safeToken}"/>
+      <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-input" type="email" id="email" placeholder="you@example.com"
+               required autocomplete="email" value="${safeEmail}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="code">Verification code</label>
+        <input class="form-input" type="text" id="code" placeholder="6-digit code"
+               required autocomplete="one-time-code" inputmode="numeric" maxlength="8"/>
+      </div>
       <div class="form-group">
         <label class="form-label" for="password">New Password</label>
         <div class="pw-wrap">
@@ -76,19 +80,15 @@ export function resetPasswordPage(token: string): string {
     </form>
 
     <p class="auth-footer">
-      <a href="/login">← Back to sign in</a>
+      <a href="/forgot-password">Request a new code</a>
+      &nbsp;·&nbsp;
+      <a href="/login">Sign in</a>
     </p>
 
   </div>
 </div>
 
 <script>
-  // If no token, show expired immediately
-  if (!document.getElementById('token').value) {
-    document.getElementById('resetForm').style.display = 'none';
-    document.getElementById('expiredAlert').style.display = 'flex';
-  }
-
   function togglePw(id, btn) {
     const inp = document.getElementById(id);
     const isText = inp.type === 'text';
@@ -122,8 +122,11 @@ export function resetPasswordPage(token: string): string {
   async function handleReset(e) {
     e.preventDefault();
     document.getElementById('errorAlert').classList.remove('show');
+    const email = document.getElementById('email').value.trim();
+    const code = document.getElementById('code').value.trim();
     const password = document.getElementById('password').value;
     const confirm  = document.getElementById('confirm').value;
+    if (!email || !code) { showError('Email and verification code are required'); return; }
     if (password !== confirm) { showError('Passwords do not match'); return; }
     if (password.length < 8)  { showError('Password must be at least 8 characters'); return; }
     const btn = document.getElementById('submitBtn');
@@ -132,17 +135,12 @@ export function resetPasswordPage(token: string): string {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: document.getElementById('token').value, password }),
+        body: JSON.stringify({ email, code, password }),
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status === 400 && data.error && data.error.toLowerCase().includes('expired')) {
-          document.getElementById('resetForm').style.display = 'none';
-          document.getElementById('expiredAlert').style.display = 'flex';
-        } else {
-          showError(data.error || 'Reset failed');
-          btn.disabled = false; btn.textContent = 'Set New Password';
-        }
+        showError(data.error || 'Reset failed');
+        btn.disabled = false; btn.textContent = 'Set New Password';
         return;
       }
       window.location.href = '/login?reset=1';

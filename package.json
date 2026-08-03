@@ -12,6 +12,7 @@
     "mcp": "cd mcp-server && uv run uvicorn app.main:app --host 0.0.0.0 --port 8100"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1098.0",
     "@google/genai": "^2.10.0",
     "@livekit/rtc-node": "^0.13.30",
     "@temporalio/activity": "^1.19.0",

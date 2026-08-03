@@ -41,12 +41,18 @@ export async function createAiHostedMeeting(params: {
     if (p.email === creatorEmail) continue;
     await runQuery(
       `MATCH (a:AiHostedMeeting {id: $meetingId})
+       MATCH (m:Meeting {id: $meetingId})
+       WITH a, m
+       ORDER BY CASE WHEN m.label IS NULL THEN 1 ELSE 0 END
+       LIMIT 1
        MATCH (u:User {email: $email})
        MERGE (u)-[r:AI_MEETING_PARTICIPANT]->(a)
        ON CREATE SET r.ringAt = $ringAt, r.role = $role, r.joined = false
        ON MATCH  SET r.ringAt = $ringAt, r.role = $role
-       MERGE (u)-[:INVITED_TO { by: $creatorName, at: $now }]->(m:Meeting {id: $meetingId})`,
-      { meetingId, email: p.email, ringAt: p.ringAt, role: p.role, creatorName, now }
+       MERGE (u)-[inv:INVITED_TO]->(m)
+       ON CREATE SET inv.by = $creatorName, inv.byEmail = $creatorEmail, inv.at = $now
+       ON MATCH  SET inv.by = $creatorName, inv.byEmail = $creatorEmail, inv.at = $now`,
+      { meetingId, email: p.email, ringAt: p.ringAt, role: p.role, creatorName, creatorEmail, now }
     );
   }
 }
