@@ -156,6 +156,7 @@ After your Assistant attends a meeting, you receive a structured debrief with ta
 - **Share screen** — view others' screen shares full-screen
 - Open **chat** — send messages to everyone in the room
 - Use **@ring** in chat — type `@ring someone@email.com` to call a registered user into the meeting
+- Open the **Whiteboard** (Board button) — collaborative Excalidraw board synced live with everyone in the room (shapes, freehand, arrows, text, eraser; Clear shared with all)
 - Send **emoji reactions** (thumbs up, clap, heart, etc.)
 - View **participants** list
 - Open the **Meeting Tree** — see and manage sub-meetings as a visual canvas
@@ -169,7 +170,7 @@ After your Assistant attends a meeting, you receive a structured debrief with ta
 - Lock mic/camera for participants (permissions panel, admins)
 - **Leave** the meeting
 
-**Voice agent tip:** "In the meeting room, you can video chat, share your screen, chat, and ring someone in with @ring followed by their email. Open the Meeting Tree to create breakout sub-meetings."
+**Voice agent tip:** "In the meeting room, you can video chat, share your screen, chat, open the whiteboard to draw together, and ring someone in with @ring followed by their email. Open the Meeting Tree to create breakout sub-meetings."
 
 ---
 
@@ -353,6 +354,7 @@ After your Assistant attends a meeting, you receive a structured debrief with ta
 | **Superadmin** | The person who created the meeting; can roam the full tree |
 | **Admin** | Manages a specific sub-meeting; can admit waiting users |
 | **@ring** | In-app call to pull a registered user into your meeting |
+| **Whiteboard** | Collaborative Excalidraw board in the meeting room — everyone draws together live |
 | **Assistant** | Your personal AI bot that can attend meetings on your behalf |
 | **AI Host** | Server bot that runs scheduled meetings — welcomes, rings, keeps agenda |
 | **Debrief** | Post-meeting report from your Assistant: summary, tasks, decisions, escalations |
@@ -376,6 +378,9 @@ Log in, go to the Dashboard, and click New Meeting. Name it and choose public or
 
 **"How do I join a meeting?"**  
 Use an invite link (`/room/{meetingId}`), join from your Dashboard active rooms, or accept an invitation from the Invitations page.
+
+**"How do I use the whiteboard?"**  
+In a live meeting, tap **Board** on the control bar. Draw with shapes, freehand, arrows, and text. Everyone in the room sees updates live. Use **Clear** to reset the board for everyone. Press Escape or Close to return to video.
 
 **"How do I create breakout rooms?"**  
 In a live meeting, open the Meeting Tree and add child sub-meetings on the canvas.

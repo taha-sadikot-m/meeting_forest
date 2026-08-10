@@ -25,6 +25,16 @@ export function roomPage(
   <link rel="stylesheet" href="/public/styles.css" />
   <link rel="stylesheet" href="/public/room.css" />
   <link rel="stylesheet" href="/public/tree.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "react-dom": "https://esm.sh/react-dom@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+    }
+  }
+  </script>
 </head>
 <body class="room-body" data-meeting-id="${safeRoomId}">
 
@@ -385,7 +395,7 @@ export function roomPage(
     </div>
 
     <div class="control-group ctrl-mobile-secondary">
-      <button class="ctrl-btn" onclick="toggleWhiteboard()" title="Whiteboard">
+      <button class="ctrl-btn" id="whiteboardBtn" onclick="toggleWhiteboard()" title="Whiteboard">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
           <line x1="9" y1="21" x2="9" y2="9"/>
@@ -937,6 +947,30 @@ export function roomPage(
   <div id="treeCanvasContainer" style="flex:1;position:relative"></div>
 </div>
 
+<!-- ── Whiteboard overlay (Excalidraw) ───────────────────────────────────── -->
+<div class="whiteboard-overlay" id="whiteboardOverlay">
+  <div class="whiteboard-overlay-hdr">
+    <div class="whiteboard-overlay-hdr-left">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
+        <line x1="9" y1="21" x2="9" y2="9"/>
+      </svg>
+      <span class="whiteboard-overlay-title">Whiteboard</span>
+      <span class="whiteboard-hint">Collaborative · synced live in this room</span>
+    </div>
+    <div class="whiteboard-overlay-actions">
+      <button class="whiteboard-ghost-btn" type="button" onclick="clearWhiteboard()" title="Clear board for everyone">Clear</button>
+      <button class="whiteboard-close-btn" type="button" onclick="closeWhiteboard()">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        Close
+      </button>
+    </div>
+  </div>
+  <div id="excalidrawMount" class="whiteboard-mount">
+    <div class="whiteboard-loading" id="whiteboardLoading">Loading whiteboard…</div>
+  </div>
+</div>
+
 <!-- ── Sub-meeting creation modal ────────────────────────────────────────── -->
 <div class="smm-overlay" id="subMeetingModal">
   <div class="smm-modal">
@@ -1039,6 +1073,7 @@ export function roomPage(
 <div class="toast-container" id="toastContainer"></div>
 
 <script src="/public/tree.js"></script>
+<script src="/public/whiteboard.js"></script>
 <script>
   const ROOM_ID              = ${JSON.stringify(safeRoomId)};
   const HAS_AGENT_HOST       = ${hasAgentHost ? "true" : "false"};
@@ -2031,6 +2066,8 @@ export function roomPage(
         showReactionOverlay(msg.emoji);
       } else if (msg.type === 'move_to_submeeting') {
         showMoveToSubmeeting(msg.nodeId, msg.nodeLabel, msg.role);
+      } else if (typeof msg.type === 'string' && msg.type.indexOf('whiteboard_') === 0) {
+        handleWhiteboardMessage(msg);
       }
     } catch (e) { /* ignore malformed */ }
   }
@@ -3083,7 +3120,108 @@ export function roomPage(
     m.style.display = open ? 'block' : 'none';
     if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  function toggleWhiteboard() { showToast('Whiteboard coming soon', 'info'); }
+  // ── Collaborative whiteboard (Excalidraw via public/whiteboard.js) ────────
+  let whiteboardOpen = false;
+  let whiteboardBusy = false;
+
+  function publishWhiteboardPayload(payload) {
+    if (!livekitRoom) return;
+    try {
+      livekitRoom.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(payload)),
+        { reliable: true }
+      );
+    } catch (e) {
+      console.warn('[whiteboard] publish failed', e);
+    }
+  }
+
+  function setWhiteboardBtnActive(active) {
+    const btn = document.getElementById('whiteboardBtn');
+    if (btn) btn.classList.toggle('active', !!active);
+  }
+
+  function ensureWhiteboardInstance() {
+    if (window._whiteboard) return window._whiteboard;
+    if (typeof MeetingWhiteboard === 'undefined') {
+      throw new Error('Whiteboard module failed to load');
+    }
+    const clientId = (USER_EMAIL || userName || 'anon') + '-' + Math.random().toString(36).slice(2, 6);
+    window._whiteboard = new MeetingWhiteboard({
+      mountId: 'excalidrawMount',
+      clientId: clientId,
+      onPublish: publishWhiteboardPayload,
+      onError: function(err) {
+        console.error('[whiteboard]', err);
+        showToast('Whiteboard error: ' + (err && err.message ? err.message : String(err)), 'error');
+      },
+    });
+    return window._whiteboard;
+  }
+
+  function handleWhiteboardMessage(msg) {
+    // Ensure instance so we can cache scenes / answer sync even before overlay open
+    if (!window._whiteboard) {
+      try {
+        if (
+          msg.type === 'whiteboard_scene' ||
+          msg.type === 'whiteboard_sync_response' ||
+          msg.type === 'whiteboard_scene_chunk' ||
+          msg.type === 'whiteboard_clear'
+        ) {
+          ensureWhiteboardInstance();
+        } else {
+          return;
+        }
+      } catch (_) {
+        return;
+      }
+    }
+    window._whiteboard.applyRemote(msg);
+  }
+
+  async function openWhiteboard() {
+    if (whiteboardBusy) return;
+    whiteboardBusy = true;
+    try {
+      if (!livekitRoom) {
+        showToast('Join the meeting before opening the whiteboard', 'info');
+        return;
+      }
+      const wb = ensureWhiteboardInstance();
+      await wb.open();
+      document.getElementById('whiteboardOverlay').classList.add('open');
+      setWhiteboardBtnActive(true);
+      whiteboardOpen = true;
+      wb.requestSync();
+    } catch (e) {
+      console.error('[whiteboard] open failed', e);
+      showToast('Could not load whiteboard. Check your network and try again.', 'error');
+    } finally {
+      whiteboardBusy = false;
+    }
+  }
+
+  function closeWhiteboard() {
+    const overlay = document.getElementById('whiteboardOverlay');
+    if (overlay) overlay.classList.remove('open');
+    if (window._whiteboard) window._whiteboard.close();
+    setWhiteboardBtnActive(false);
+    whiteboardOpen = false;
+  }
+
+  async function toggleWhiteboard() {
+    if (whiteboardOpen) closeWhiteboard();
+    else await openWhiteboard();
+  }
+
+  function clearWhiteboard() {
+    if (!window._whiteboard) return;
+    if (!confirm('Clear the whiteboard for everyone in this room?')) return;
+    window._whiteboard.publishClear();
+    showToast('Whiteboard cleared', 'info');
+  }
+
   function showInfo()         { showInfoModal(); }
 
   // ── Invite / share link ───────────────────────────────────────────────────
@@ -3387,6 +3525,20 @@ export function roomPage(
   });
   window.addEventListener('resize', function() {
     if (!window.matchMedia('(max-width: 860px)').matches) closeTopbarMenu();
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Escape') return;
+    if (whiteboardOpen) {
+      closeWhiteboard();
+      e.preventDefault();
+      return;
+    }
+    const tree = document.getElementById('treeOverlay');
+    if (tree && tree.classList.contains('open')) {
+      closeTreeOverlay();
+      e.preventDefault();
+    }
   });
 
   // ── Global error handlers (debug @ring) ────────────────────────────────────
