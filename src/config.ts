@@ -44,4 +44,19 @@ export const config = {
     clientId: process.env.COGNITO_CLIENT_ID || "",
     clientSecret: process.env.COGNITO_CLIENT_SECRET || "",
   },
+  neko: {
+    url: process.env.NEKO_URL || "",
+    user: process.env.NEKO_USER || "",
+    password: process.env.NEKO_PASSWORD || "",
+  },
 };
+
+/** Embed URL for room iframe, or null when NEKO_URL is unset. */
+export function getNekoEmbedUrl(): string | null {
+  const base = config.neko.url.trim().replace(/\/$/, "");
+  if (!base) return null;
+  const params = new URLSearchParams({ embed: "1" });
+  if (config.neko.user.trim()) params.set("usr", config.neko.user.trim());
+  if (config.neko.password) params.set("pwd", config.neko.password);
+  return `${base}/?${params.toString()}`;
+}

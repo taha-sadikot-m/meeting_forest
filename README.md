@@ -184,3 +184,6 @@ Or connect to a hosted instance — set `MEMGRAPH_HOST` to its public IP.
 | `WORKER_INTERNAL_SECRET` | No | `dev-worker-secret` | Shared secret for worker → app internal APIs |
 | `ADMIN_EMAIL` | No* | _(empty)_ | Platform admin login email for `/admin/login` (* both admin vars required to enable login) |
 | `ADMIN_PASSWORD` | No* | _(empty)_ | Platform admin password (dedicated session; not a normal user account) |
+| `NEKO_URL` | No* | _(empty)_ | Self-hosted n.eko base URL for room Virtual Browser (* leave empty to hide Browser control) |
+| `NEKO_USER` | No | _(empty)_ | Optional n.eko username for embed query (`usr`) |
+| `NEKO_PASSWORD` | No | _(empty)_ | Optional n.eko password for embed query (`pwd`) |

@@ -1,3 +1,5 @@
+import { getNekoEmbedUrl } from "../config";
+
 export function roomPage(
   roomId: string,
   user?: { name: string; email: string },
@@ -16,6 +18,8 @@ export function roomPage(
   const hasAgentHost     = !!agentHostEnabled;
   const userInitial      = (user?.name?.[0] || '?').toUpperCase();
   const userEmail        = user?.email || '';
+  const nekoEmbedUrl     = getNekoEmbedUrl();
+  const nekoEnabled      = Boolean(nekoEmbedUrl);
   return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -404,6 +408,17 @@ export function roomPage(
       <span class="ctrl-label">Board</span>
     </div>
 
+    <div class="control-group ctrl-mobile-secondary" id="virtualBrowserCtrlGroup" style="${nekoEnabled ? "" : "display:none"}">
+      <button class="ctrl-btn" id="virtualBrowserBtn" onclick="toggleVirtualBrowser()" title="Virtual Browser">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="2" y1="12" x2="22" y2="12"/>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+      </button>
+      <span class="ctrl-label">Browser</span>
+    </div>
+
     <!-- Tree button — visible only for admin/superadmin -->
     <div class="control-group ctrl-mobile-secondary" id="treeCtrlGroup" style="display:none">
       <button class="ctrl-btn" id="treeBtn" onclick="openTreeOverlay()" title="Meeting Tree">
@@ -500,6 +515,14 @@ export function roomPage(
       <line x1="9" y1="21" x2="9" y2="9"/>
     </svg>
     Whiteboard
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" id="moreVirtualBrowserItem" onclick="toggleMore();toggleVirtualBrowser()" style="${nekoEnabled ? "" : "display:none"}">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="2" y1="12" x2="22" y2="12"/>
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </svg>
+    Virtual Browser
   </button>
   <button class="more-menu-item more-menu-mobile-only" id="moreTreeItem" onclick="toggleMore();openTreeOverlay()" style="display:none">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
@@ -971,6 +994,39 @@ export function roomPage(
   </div>
 </div>
 
+<!-- ── Virtual Browser overlay (n.eko) ───────────────────────────────────── -->
+<div class="virtual-browser-overlay" id="virtualBrowserOverlay">
+  <div class="virtual-browser-overlay-hdr">
+    <div class="virtual-browser-overlay-hdr-left">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="2" y1="12" x2="22" y2="12"/>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+      </svg>
+      <span class="virtual-browser-overlay-title">Virtual Browser</span>
+      <span class="virtual-browser-hint">Shared browser · powered by n.eko</span>
+    </div>
+    <div class="virtual-browser-overlay-actions">
+      <button class="virtual-browser-ghost-btn" type="button" onclick="openVirtualBrowserExternal()" title="Open in a new tab">Open in new tab</button>
+      <button class="virtual-browser-close-btn" type="button" onclick="closeVirtualBrowser()">
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        Close
+      </button>
+    </div>
+  </div>
+  <div class="virtual-browser-mount">
+    <iframe
+      id="virtualBrowserFrame"
+      class="virtual-browser-frame"
+      title="Virtual Browser"
+      allow="fullscreen; autoplay; clipboard-read; clipboard-write; microphone; camera"
+      allowfullscreen
+      referrerpolicy="no-referrer"
+    ></iframe>
+    <div class="virtual-browser-loading" id="virtualBrowserLoading">Loading virtual browser…</div>
+  </div>
+</div>
+
 <!-- ── Sub-meeting creation modal ────────────────────────────────────────── -->
 <div class="smm-overlay" id="subMeetingModal">
   <div class="smm-modal">
@@ -1077,6 +1133,8 @@ export function roomPage(
 <script>
   const ROOM_ID              = ${JSON.stringify(safeRoomId)};
   const HAS_AGENT_HOST       = ${hasAgentHost ? "true" : "false"};
+  const NEKO_ENABLED         = ${nekoEnabled ? "true" : "false"};
+  const NEKO_EMBED_URL       = ${JSON.stringify(nekoEmbedUrl || "")};
   let currentPrivacy         = ${JSON.stringify(isPrivateMeeting ? 'private' : 'public')};
   const SERVER_PRE_ADMITTED  = ${preAdmitted};
   const USER_INITIAL         = ${JSON.stringify(userInitial)};
@@ -3222,6 +3280,56 @@ export function roomPage(
     showToast('Whiteboard cleared', 'info');
   }
 
+  // ── Virtual Browser (n.eko iframe) ─────────────────────────────────────────
+  let virtualBrowserOpen = false;
+
+  function setVirtualBrowserBtnActive(active) {
+    const btn = document.getElementById('virtualBrowserBtn');
+    if (btn) btn.classList.toggle('active', !!active);
+  }
+
+  function openVirtualBrowser() {
+    if (!NEKO_ENABLED || !NEKO_EMBED_URL) {
+      showToast('Virtual browser is not configured', 'info');
+      return;
+    }
+    if (!livekitRoom) {
+      showToast('Join the meeting before opening the virtual browser', 'info');
+      return;
+    }
+    const frame = document.getElementById('virtualBrowserFrame');
+    const loading = document.getElementById('virtualBrowserLoading');
+    if (frame && !frame.getAttribute('src')) {
+      if (loading) loading.classList.remove('hidden');
+      frame.onload = function() {
+        if (loading) loading.classList.add('hidden');
+      };
+      frame.setAttribute('src', NEKO_EMBED_URL);
+    } else if (loading) {
+      loading.classList.add('hidden');
+    }
+    document.getElementById('virtualBrowserOverlay').classList.add('open');
+    setVirtualBrowserBtnActive(true);
+    virtualBrowserOpen = true;
+  }
+
+  function closeVirtualBrowser() {
+    const overlay = document.getElementById('virtualBrowserOverlay');
+    if (overlay) overlay.classList.remove('open');
+    setVirtualBrowserBtnActive(false);
+    virtualBrowserOpen = false;
+  }
+
+  function toggleVirtualBrowser() {
+    if (virtualBrowserOpen) closeVirtualBrowser();
+    else openVirtualBrowser();
+  }
+
+  function openVirtualBrowserExternal() {
+    if (!NEKO_EMBED_URL) return;
+    window.open(NEKO_EMBED_URL, '_blank', 'noopener,noreferrer');
+  }
+
   function showInfo()         { showInfoModal(); }
 
   // ── Invite / share link ───────────────────────────────────────────────────
@@ -3529,6 +3637,11 @@ export function roomPage(
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
+    if (virtualBrowserOpen) {
+      closeVirtualBrowser();
+      e.preventDefault();
+      return;
+    }
     if (whiteboardOpen) {
       closeWhiteboard();
       e.preventDefault();

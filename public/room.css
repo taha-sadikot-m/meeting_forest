@@ -2020,3 +2020,104 @@ body.no-screen-share #shareBtn {
 @media (max-width: 640px) {
   .whiteboard-hint { display: none; }
 }
+
+/* ── Virtual Browser overlay (n.eko) ─────────────────────────────────────── */
+.virtual-browser-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  flex-direction: column;
+  background: #0b0c12;
+}
+.virtual-browser-overlay.open { display: flex; }
+
+.virtual-browser-overlay-hdr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: #13151F;
+  border-bottom: 1px solid #1E2130;
+  flex-shrink: 0;
+}
+.virtual-browser-overlay-hdr-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.virtual-browser-overlay-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+.virtual-browser-hint {
+  font-size: 12px;
+  color: #9CA3AF;
+  white-space: nowrap;
+}
+.virtual-browser-overlay-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.virtual-browser-ghost-btn {
+  border: 1px solid #2A2E3F;
+  background: transparent;
+  color: #E5E7EB;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.virtual-browser-ghost-btn:hover { background: #242739; }
+.virtual-browser-close-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: #D15000;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.virtual-browser-close-btn:hover { background: #B84500; }
+
+.virtual-browser-mount {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.virtual-browser-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #000;
+}
+.virtual-browser-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #9CA3AF;
+  background: #0b0c12;
+  z-index: 2;
+  pointer-events: none;
+}
+.virtual-browser-loading.hidden { display: none; }
+
+@media (max-width: 640px) {
+  .virtual-browser-hint { display: none; }
+}
