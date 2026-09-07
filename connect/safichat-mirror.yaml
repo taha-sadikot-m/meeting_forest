@@ -1,0 +1,33 @@
+# Redpanda Connect: NATS JetStream (durable) → platform-events-v1
+# Preserve the original semantic envelope. Fill event_id/subject only if absent.
+
+input:
+  nats_jetstream:
+    urls:
+      - ${NATS_URL:nats://nats:4222}
+    stream: ${SAFICHAT_STREAM:SAFICHAT}
+    subject: ${SAFICHAT_SUBJECT:safichat.semantic.user.message}
+    durable: safichat-redpanda-v1
+    deliver: all
+
+pipeline:
+  processors:
+    - mapping: |
+        root = this
+        root.event_id = if json("event_id") != null && json("event_id") != "" {
+          json("event_id")
+        } else {
+          "SAFICHAT-" + meta("nats_sequence_stream").string()
+        }
+        root.subject = if json("subject") != null && json("subject") != "" {
+          json("subject")
+        } else {
+          meta("nats_subject")
+        }
+
+output:
+  redpanda:
+    seed_brokers:
+      - ${REDPANDA_BROKERS:redpanda:9092}
+    topic: platform-events-v1
+    key: ${! json("context_id") }

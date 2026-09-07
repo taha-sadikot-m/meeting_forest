@@ -187,3 +187,11 @@ Or connect to a hosted instance — set `MEMGRAPH_HOST` to its public IP.
 | `NEKO_URL` | No* | _(empty)_ | Self-hosted n.eko base URL for room Virtual Browser (* leave empty to hide Browser control) |
 | `NEKO_USER` | No | _(empty)_ | Optional n.eko username for embed query (`usr`) |
 | `NEKO_PASSWORD` | No | _(empty)_ | Optional n.eko password for embed query (`pwd`) |
+| `OPENREPLAY_PROJECT_KEY` | No* | _(empty)_ | OpenReplay project key (* leave empty to disable tracker / Assist) |
+| `OPENREPLAY_INGEST_POINT` | No | _(empty)_ | Self-hosted ingest URL (`https://or.example.com/ingest`); empty = OpenReplay Cloud |
+| `OPENREPLAY_ASSIST` | No | `true` | Load Assist build for live cobrowse |
+| `OPENREPLAY_DISABLE_SECURE_MODE` | No | `true` | Allow tracker on `http://localhost` (set `false` in production) |
+
+See [docs/openreplay-local.md](docs/openreplay-local.md) for local Docker / WSL install and Cloud setup.
+
+Chat event mirror (NATS → Redpanda, optional): [docs/events-mirror.md](docs/events-mirror.md). `NATS_URL` empty disables publish; Messages still use Memgraph.

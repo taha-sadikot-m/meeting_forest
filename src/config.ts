@@ -49,6 +49,30 @@ export const config = {
     user: process.env.NEKO_USER || "",
     password: process.env.NEKO_PASSWORD || "",
   },
+  events: {
+    /** Empty = do not publish chat events to NATS (chat still works). */
+    natsUrl: process.env.NATS_URL || "",
+    stream: process.env.NATS_STREAM || process.env.SAFICHAT_STREAM || "SAFICHAT",
+    tenantId: process.env.EVENTS_TENANT_ID || "meeting-forest",
+    kafkaBrokers: process.env.REDPANDA_BROKERS || "localhost:19092",
+  },
+  openreplay: {
+    /** Empty = tracker disabled. From OpenReplay project settings. */
+    projectKey: process.env.OPENREPLAY_PROJECT_KEY || "",
+    /**
+     * Self-hosted ingest, e.g. https://openreplay.localhost/ingest
+     * Leave empty for OpenReplay Cloud (api.openreplay.com).
+     */
+    ingestPoint: process.env.OPENREPLAY_INGEST_POINT || "",
+    /** Use Assist build (live cobrowse). Default true. */
+    assist: (process.env.OPENREPLAY_ASSIST || "true").toLowerCase() !== "false",
+    /** Allow tracker on http://localhost (dev only). */
+    disableSecureMode: (process.env.OPENREPLAY_DISABLE_SECURE_MODE || "true").toLowerCase() !== "false",
+    scriptTracker: process.env.OPENREPLAY_SCRIPT_URL || "//static.openreplay.com/latest/openreplay.js",
+    scriptAssist:
+      process.env.OPENREPLAY_ASSIST_SCRIPT_URL ||
+      "//static.openreplay.com/latest/openreplay-assist.js",
+  },
 };
 
 /** Embed URL for room iframe, or null when NEKO_URL is unset. */

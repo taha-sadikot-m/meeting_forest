@@ -1,4 +1,5 @@
 import { runQuery } from "./memgraph";
+import { publishUserMessage } from "../events/nats-publisher";
 import { normEmail } from "../rings";
 
 export interface ConversationSummary {
@@ -243,6 +244,14 @@ export async function sendMessage(
       preview: previewText(trimmed),
     }
   );
+
+  publishUserMessage({
+    eventId: messageId,
+    conversationId,
+    body: trimmed,
+    senderEmail: email,
+    sentAt: now,
+  });
 
   return { id: messageId, body: trimmed, senderEmail: email, sentAt: now };
 }

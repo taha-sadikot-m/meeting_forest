@@ -1,0 +1,88 @@
+# NATS JetStream + Redpanda + Redpanda Connect (chat event mirror).
+# Chat/Memgraph do not depend on this stack. Catch-up uses durable consumer safichat-redpanda-v1.
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["--jetstream", "--store_dir", "/data", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.8
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr
+      - internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr
+      - internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr
+      - internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr
+      - redpanda:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - 384M
+      - --default-log-level=info
+    ports:
+      - "19092:19092"
+      - "18082:18082"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    restart: unless-stopped
+
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.8
+    depends_on:
+      - redpanda
+    restart: "no"
+    command:
+      - bash
+      - -c
+      - |
+        sleep 8
+        rpk topic create platform-events-v1 -p 3 -r 1 --brokers redpanda:9092 || true
+
+  nats-init:
+    image: natsio/nats-box:latest
+    depends_on:
+      - nats
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - nats stream info SAFICHAT --server nats:4222 >/dev/null 2>&1 || nats stream add SAFICHAT --server nats:4222 --subjects 'safichat.semantic.>' --storage file --defaults
+
+  connect:
+    image: docker.redpanda.com/redpandadata/connect:4.46.0
+    depends_on:
+      - nats
+      - nats-init
+      - redpanda
+    environment:
+      NATS_URL: nats://nats:4222
+      SAFICHAT_STREAM: SAFICHAT
+      SAFICHAT_SUBJECT: safichat.semantic.user.message
+      REDPANDA_BROKERS: redpanda:9092
+    volumes:
+      - ./connect/safichat-mirror.yaml:/connect.yaml:ro
+    command: ["-c", "/connect.yaml"]
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  redpanda_data:
