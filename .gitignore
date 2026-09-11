@@ -9,6 +9,11 @@ mcp-server/uv.lock
 .env.*.local
 mcp-server/.env
 
+# SSH / private keys — never commit
+*.pem
+*.key
+*.ppk
+
 # Bun
 bun.lockb
 

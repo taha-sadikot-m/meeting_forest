@@ -16,7 +16,7 @@ export function agentPage(user: { name: string; email: string }): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Meeting Forest — AI Agent</title>
   <link rel="stylesheet" href="/public/styles.css?v=2" />
-  ${sidebarCollapseInitScript()}
+  ${sidebarCollapseInitScript(user)}
   <style>
     .page-header { margin-bottom: 28px; }
     .page-header h1 { font-size: 28px; font-weight: 800; color: var(--foreground); letter-spacing: -.5px; margin-bottom: 6px; }

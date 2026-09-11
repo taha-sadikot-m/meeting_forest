@@ -1,3 +1,5 @@
+import { openReplayHeadScript, type OpenReplayUser } from "../openreplay";
+
 export type AppPage =
   | "dashboard"
   | "past"
@@ -13,8 +15,10 @@ function linkClass(active: AppPage, page: AppPage): string {
   return active === page ? "sb-link active" : "sb-link";
 }
 
-export function sidebarCollapseInitScript(): string {
-  return `<script>
+/** OpenReplay tracker (if configured) + sidebar collapse boot. */
+export function sidebarCollapseInitScript(user?: OpenReplayUser): string {
+  return `${openReplayHeadScript(user)}
+<script>
     (function(){
       if(localStorage.getItem('sidebar-state')==='collapsed' && window.innerWidth>=768)
         document.documentElement.classList.add('sidebar-collapsed');

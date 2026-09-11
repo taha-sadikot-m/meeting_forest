@@ -1,3 +1,5 @@
+import { openReplayHeadScript } from "../openreplay";
+
 export function loginPage(opts: { redirect?: string; verified?: boolean; reset?: boolean } = {}): string {
   const redirect = JSON.stringify(opts.redirect || "/");
   return `<!DOCTYPE html>
@@ -9,6 +11,7 @@ export function loginPage(opts: { redirect?: string; verified?: boolean; reset?:
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="/public/auth.css"/>
+  ${openReplayHeadScript()}
 </head>
 <body>
 <div class="auth-wrap">

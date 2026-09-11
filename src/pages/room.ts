@@ -1,4 +1,5 @@
 import { getNekoEmbedUrl } from "../config";
+import { openReplayHeadScript } from "../openreplay";
 
 export function roomPage(
   roomId: string,
@@ -29,6 +30,7 @@ export function roomPage(
   <link rel="stylesheet" href="/public/styles.css" />
   <link rel="stylesheet" href="/public/room.css" />
   <link rel="stylesheet" href="/public/tree.css" />
+  ${openReplayHeadScript(user)}
   <script type="importmap">
   {
     "imports": {
@@ -228,6 +230,68 @@ export function roomPage(
     </div>
   </div>
 
+  <aside class="feature-stage" id="featureStage" aria-label="Room entities">
+    <div class="feature-stage-empty" id="featureStageEmpty">
+      No active room entities yet. Admins can add <code>@add whiteboard</code> or <code>@add browser</code> from chat.
+    </div>
+    <div class="feature-stage-body" id="featureStageBody" style="display:none">
+      <section class="feature-entity-shell" id="entityShell-whiteboard">
+        <div class="feature-entity-header">
+          <div class="feature-entity-header-main">
+            <div class="feature-entity-title-row">
+              <span class="feature-entity-title">Whiteboard</span>
+              <span class="feature-entity-badge" id="entityBadge-whiteboard">Entity</span>
+            </div>
+            <div class="feature-entity-subtitle">Collaborative board inside this room</div>
+          </div>
+          <div class="feature-entity-actions">
+            <button class="feature-entity-btn" id="whiteboardClearBtn" type="button" onclick="clearWhiteboard()">Clear</button>
+            <button class="feature-entity-btn primary" id="whiteboardExpandBtn" type="button" onclick="focusEntity('whiteboard')">Expand</button>
+            <button class="feature-entity-btn danger" id="whiteboardCloseBtn" type="button" onclick="closeEntityFocus()">Close</button>
+          </div>
+        </div>
+        <div class="feature-entity-body">
+          <div id="whiteboardLocked" class="feature-entity-locked">You do not have access to this whiteboard.</div>
+          <div id="excalidrawMount" class="whiteboard-mount">
+            <div class="whiteboard-loading" id="whiteboardLoading">Loading whiteboard…</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feature-entity-shell" id="entityShell-browser">
+        <div class="feature-entity-header">
+          <div class="feature-entity-header-main">
+            <div class="feature-entity-title-row">
+              <span class="feature-entity-title">Browser</span>
+              <span class="feature-entity-badge" id="entityBadge-browser">Entity</span>
+            </div>
+            <div class="feature-entity-subtitle">Shared browser powered by n.eko</div>
+          </div>
+          <div class="feature-entity-actions">
+            <button class="feature-entity-btn" id="browserOpenExternalBtn" type="button" onclick="openVirtualBrowserExternal()">Open in Tab</button>
+            <button class="feature-entity-btn primary" id="browserExpandBtn" type="button" onclick="focusEntity('browser')">Expand</button>
+            <button class="feature-entity-btn danger" id="browserCloseBtn" type="button" onclick="closeEntityFocus()">Close</button>
+          </div>
+        </div>
+        <div class="feature-entity-body">
+          <div id="virtualBrowserLocked" class="feature-entity-locked">You do not have access to this browser.</div>
+          <div class="virtual-browser-mount">
+            <iframe
+              id="virtualBrowserFrame"
+              class="virtual-browser-frame"
+              title="Virtual Browser"
+              allow="fullscreen; autoplay; clipboard-read; clipboard-write; microphone; camera"
+              allowfullscreen
+              referrerpolicy="no-referrer"
+            ></iframe>
+            <div class="virtual-browser-loading" id="virtualBrowserLoading">Loading virtual browser…</div>
+            <div class="feature-browser-blocker" id="virtualBrowserBlocker">View only. Ask the admin for browser control.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
+
   <!-- ── Right panel (Chat / People / Permissions) ──────────────────────── -->
   <div class="room-panel" id="roomPanel" style="display:none">
     <div class="panel-tabs">
@@ -351,7 +415,7 @@ export function roomPage(
             <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
           </svg>
         </button>
-        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showAudioMenu()">
+        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showAudioMenu(this)" title="Audio devices" aria-haspopup="menu">
           <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
@@ -369,7 +433,7 @@ export function roomPage(
             <line x1="1" y1="1" x2="23" y2="23"/>
           </svg>
         </button>
-        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showVideoMenu()">
+        <button class="ctrl-btn-caret ctrl-mobile-secondary" onclick="showVideoMenu(this)" title="Video devices" aria-haspopup="menu">
           <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
@@ -398,7 +462,7 @@ export function roomPage(
       <span class="ctrl-label">React</span>
     </div>
 
-    <div class="control-group ctrl-mobile-secondary">
+    <div class="control-group ctrl-mobile-secondary" id="whiteboardCtrlGroup" style="display:none">
       <button class="ctrl-btn" id="whiteboardBtn" onclick="toggleWhiteboard()" title="Whiteboard">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
@@ -509,7 +573,7 @@ export function roomPage(
     </svg>
     Reactions
   </button>
-  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();toggleWhiteboard()">
+  <button class="more-menu-item more-menu-mobile-only" id="moreWhiteboardItem" onclick="toggleMore();toggleWhiteboard()" style="display:none">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
       <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
       <line x1="9" y1="21" x2="9" y2="9"/>
@@ -539,6 +603,19 @@ export function roomPage(
     Waiting Room
   </button>
   <div class="more-menu-divider more-menu-mobile-only"></div>
+  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();showAudioMenu(document.getElementById('moreBtn'))">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/>
+    </svg>
+    Audio devices
+  </button>
+  <button class="more-menu-item more-menu-mobile-only" onclick="toggleMore();showVideoMenu(document.getElementById('moreBtn'))">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+    </svg>
+    Video devices
+  </button>
   <button class="more-menu-item" onclick="toggleMore();openSettings()">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="12" cy="12" r="3"/>
@@ -552,6 +629,10 @@ export function roomPage(
     Leave Meeting
   </button>
 </div>
+
+<!-- ── Device selection menus (populated by renderDeviceMenu) ──────────────── -->
+<div class="device-menu" id="audioDeviceMenu" style="display:none" role="menu" aria-label="Audio devices"></div>
+<div class="device-menu" id="videoDeviceMenu" style="display:none" role="menu" aria-label="Video devices"></div>
 
 <!-- ── Reaction overlay ────────────────────────────────────────────────────── -->
 <div class="reaction-overlay" id="reactionOverlay"></div>
@@ -574,6 +655,7 @@ export function roomPage(
         </div>
         <div class="lobby-media-controls">
           <div class="lobby-media-control">
+            <div class="control-btn-wrap">
             <button class="ctrl-btn" id="lobbyMicBtn" onclick="toggleLobbyMic()" title="Microphone">
               <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -586,9 +668,14 @@ export function roomPage(
                 <line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
               </svg>
             </button>
+            <button class="ctrl-btn-caret" onclick="showAudioMenu(this)" title="Audio devices" aria-haspopup="menu">
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            </div>
             <span>Mic</span>
           </div>
           <div class="lobby-media-control">
+            <div class="control-btn-wrap">
             <button class="ctrl-btn" id="lobbyCamBtn" onclick="toggleLobbyCam()" title="Camera">
               <svg class="icon-on" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
@@ -598,6 +685,10 @@ export function roomPage(
                 <line x1="1" y1="1" x2="23" y2="23"/>
               </svg>
             </button>
+            <button class="ctrl-btn-caret" onclick="showVideoMenu(this)" title="Video devices" aria-haspopup="menu">
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            </div>
             <span>Cam</span>
           </div>
         </div>
@@ -970,63 +1061,6 @@ export function roomPage(
   <div id="treeCanvasContainer" style="flex:1;position:relative"></div>
 </div>
 
-<!-- ── Whiteboard overlay (Excalidraw) ───────────────────────────────────── -->
-<div class="whiteboard-overlay" id="whiteboardOverlay">
-  <div class="whiteboard-overlay-hdr">
-    <div class="whiteboard-overlay-hdr-left">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/>
-        <line x1="9" y1="21" x2="9" y2="9"/>
-      </svg>
-      <span class="whiteboard-overlay-title">Whiteboard</span>
-      <span class="whiteboard-hint">Collaborative · synced live in this room</span>
-    </div>
-    <div class="whiteboard-overlay-actions">
-      <button class="whiteboard-ghost-btn" type="button" onclick="clearWhiteboard()" title="Clear board for everyone">Clear</button>
-      <button class="whiteboard-close-btn" type="button" onclick="closeWhiteboard()">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        Close
-      </button>
-    </div>
-  </div>
-  <div id="excalidrawMount" class="whiteboard-mount">
-    <div class="whiteboard-loading" id="whiteboardLoading">Loading whiteboard…</div>
-  </div>
-</div>
-
-<!-- ── Virtual Browser overlay (n.eko) ───────────────────────────────────── -->
-<div class="virtual-browser-overlay" id="virtualBrowserOverlay">
-  <div class="virtual-browser-overlay-hdr">
-    <div class="virtual-browser-overlay-hdr-left">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="2" y1="12" x2="22" y2="12"/>
-        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-      </svg>
-      <span class="virtual-browser-overlay-title">Virtual Browser</span>
-      <span class="virtual-browser-hint">Shared browser · powered by n.eko</span>
-    </div>
-    <div class="virtual-browser-overlay-actions">
-      <button class="virtual-browser-ghost-btn" type="button" onclick="openVirtualBrowserExternal()" title="Open in a new tab">Open in new tab</button>
-      <button class="virtual-browser-close-btn" type="button" onclick="closeVirtualBrowser()">
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        Close
-      </button>
-    </div>
-  </div>
-  <div class="virtual-browser-mount">
-    <iframe
-      id="virtualBrowserFrame"
-      class="virtual-browser-frame"
-      title="Virtual Browser"
-      allow="fullscreen; autoplay; clipboard-read; clipboard-write; microphone; camera"
-      allowfullscreen
-      referrerpolicy="no-referrer"
-    ></iframe>
-    <div class="virtual-browser-loading" id="virtualBrowserLoading">Loading virtual browser…</div>
-  </div>
-</div>
-
 <!-- ── Sub-meeting creation modal ────────────────────────────────────────── -->
 <div class="smm-overlay" id="subMeetingModal">
   <div class="smm-modal">
@@ -1170,6 +1204,98 @@ export function roomPage(
   let treeInitialized = false;
   let hasJoinedMeeting = false;
   let heartbeatInterval = null;
+  let featurePollTimer = null;
+  let activeEntityType = '';
+  let entityFocusType = '';
+  const participantDirectory = new Map();
+  const roomEntities = {
+    whiteboard: null,
+    browser: null,
+  };
+
+  // ── Media device selection ────────────────────────────────────────────────
+  const DEVICE_KINDS = ['audioinput', 'audiooutput', 'videoinput'];
+  const DEVICE_KIND_LABEL = {
+    audioinput: 'Microphone',
+    audiooutput: 'Speaker',
+    videoinput: 'Camera',
+  };
+  let mediaDevices = { audioinput: [], audiooutput: [], videoinput: [] };
+  let selectedDevices = { audioinput: '', audiooutput: '', videoinput: '' };
+  let deviceMenuOpenFor = null; // 'audio' | 'video' | null
+
+  function deviceStorageKey(kind) { return 'mf.device.' + kind; }
+
+  function loadDevicePrefs() {
+    DEVICE_KINDS.forEach(function(kind) {
+      try {
+        selectedDevices[kind] = localStorage.getItem(deviceStorageKey(kind)) || '';
+      } catch (_) {
+        selectedDevices[kind] = '';
+      }
+    });
+  }
+
+  function saveDevicePref(kind, deviceId) {
+    selectedDevices[kind] = deviceId || '';
+    try {
+      if (deviceId) localStorage.setItem(deviceStorageKey(kind), deviceId);
+      else localStorage.removeItem(deviceStorageKey(kind));
+    } catch (_) {}
+  }
+
+  function supportsSpeakerSelection() {
+    return typeof HTMLMediaElement !== 'undefined'
+      && typeof HTMLMediaElement.prototype.setSinkId === 'function';
+  }
+
+  function deviceConstraint(kind) {
+    const id = selectedDevices[kind];
+    if (!id) return true;
+    return { deviceId: { exact: id } };
+  }
+
+  function audioConstraint() { return deviceConstraint('audioinput'); }
+  function videoConstraint() { return deviceConstraint('videoinput'); }
+
+  async function refreshMediaDevices() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    let list = [];
+    try {
+      list = await navigator.mediaDevices.enumerateDevices();
+    } catch (e) {
+      console.warn('[Devices] enumerateDevices failed:', e);
+      return;
+    }
+    const next = { audioinput: [], audiooutput: [], videoinput: [] };
+    list.forEach(function(d) {
+      if (!d || !d.deviceId) return;
+      if (!next[d.kind]) return;
+      const index = next[d.kind].length + 1;
+      next[d.kind].push({
+        deviceId: d.deviceId,
+        label: d.label || (DEVICE_KIND_LABEL[d.kind] + ' ' + index),
+      });
+    });
+    mediaDevices = next;
+    // Drop selections whose device is gone. Skipped when the kind enumerates empty,
+    // which is what browsers report before media permission has been granted.
+    DEVICE_KINDS.forEach(function(kind) {
+      const id = selectedDevices[kind];
+      if (!id || !next[kind].length) return;
+      const stillThere = next[kind].some(function(d) { return d.deviceId === id; });
+      if (!stillThere) saveDevicePref(kind, '');
+    });
+    if (deviceMenuOpenFor) renderDeviceMenu(deviceMenuOpenFor);
+  }
+
+  loadDevicePrefs();
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', function() {
+      void refreshMediaDevices();
+    });
+  }
+  void refreshMediaDevices();
 
   function startMeetingHeartbeat() {
     stopMeetingHeartbeat();
@@ -1370,7 +1496,7 @@ export function roomPage(
         lobbyStream.getTracks().forEach(t => t.stop());
         lobbyStream = null;
       }
-      lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      lobbyStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint(), audio: audioConstraint() });
       lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
       lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
       const lobbyVid = document.getElementById('lobbyVideo');
@@ -1379,8 +1505,13 @@ export function roomPage(
         lobbyVid.srcObject = lobbyStream;
       }
       syncLobbyMediaAvailability();
+      void refreshMediaDevices();
       void probeMicPermission();
     } catch (e) {
+      if (clearStaleInputDevicePrefs(e)) {
+        await ensureLobbyMediaForJoin();
+        return;
+      }
       handleLobbyMediaError(e);
     }
   }
@@ -1473,17 +1604,222 @@ export function roomPage(
         showToast(mediaPermissionErrorMessage('camera', camErr), 'error');
       }
     }
+
+    // The setMicrophoneEnabled/setCameraEnabled fallbacks above pick LiveKit's
+    // default devices, so re-apply any remembered selection.
+    if (!audioHandled && selectedDevices.audioinput) {
+      try { await livekitRoom.switchActiveDevice('audioinput', selectedDevices.audioinput); }
+      catch (e) { console.warn('[Devices] restore audioinput failed:', e); }
+    }
+    if (!videoHandled && selectedDevices.videoinput) {
+      try { await livekitRoom.switchActiveDevice('videoinput', selectedDevices.videoinput); }
+      catch (e) { console.warn('[Devices] restore videoinput failed:', e); }
+    }
+    await applyAudioOutput();
+    void refreshMediaDevices();
   }
+
+  // ── Applying device selections ────────────────────────────────────────────
+  function isOverconstrainedError(e) {
+    const name = e && e.name;
+    return name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError';
+  }
+
+  // A remembered device that has since been unplugged makes getUserMedia throw.
+  // Clearing the prefs lets the caller retry against the system defaults.
+  function clearStaleInputDevicePrefs(e) {
+    if (!isOverconstrainedError(e)) return false;
+    if (!selectedDevices.audioinput && !selectedDevices.videoinput) return false;
+    saveDevicePref('audioinput', '');
+    saveDevicePref('videoinput', '');
+    return true;
+  }
+
+  function deviceLabel(kind, deviceId) {
+    if (!deviceId) return 'System default';
+    const found = (mediaDevices[kind] || []).find(function(d) { return d.deviceId === deviceId; });
+    return found ? found.label : 'the selected device';
+  }
+
+  function collectAudioSinkElements() {
+    const els = [];
+    const screenAudio = document.getElementById('remoteScreenAudio');
+    if (screenAudio) els.push(screenAudio);
+    document.querySelectorAll('#videoGrid audio').forEach(function(el) { els.push(el); });
+    return els;
+  }
+
+  async function applyAudioOutputToElement(el) {
+    if (!el || !supportsSpeakerSelection() || !selectedDevices.audiooutput) return;
+    try {
+      await el.setSinkId(selectedDevices.audiooutput);
+    } catch (e) {
+      console.warn('[Devices] setSinkId failed:', e);
+    }
+  }
+
+  async function applyAudioOutput(deviceId) {
+    if (!supportsSpeakerSelection()) return;
+    const id = deviceId === undefined ? selectedDevices.audiooutput : (deviceId || '');
+    if (id && livekitRoom && typeof livekitRoom.switchActiveDevice === 'function') {
+      try {
+        await livekitRoom.switchActiveDevice('audiooutput', id);
+      } catch (e) {
+        console.warn('[Devices] switchActiveDevice(audiooutput) failed:', e);
+      }
+    }
+    const els = collectAudioSinkElements();
+    for (const el of els) {
+      try {
+        await el.setSinkId(id);
+      } catch (e) {
+        console.warn('[Devices] setSinkId failed:', e);
+      }
+    }
+  }
+
+  async function setSpeakerDevice(deviceId) {
+    if (!supportsSpeakerSelection()) {
+      showToast('This browser does not support speaker selection', 'info');
+      return;
+    }
+    if (selectedDevices.audiooutput === deviceId) return;
+    const previous = selectedDevices.audiooutput;
+    saveDevicePref('audiooutput', deviceId);
+    try {
+      await applyAudioOutput(deviceId);
+    } catch (e) {
+      console.warn('[Devices] speaker switch failed:', e);
+      saveDevicePref('audiooutput', previous);
+      showToast('Could not switch speaker: ' + (e && (e.message || e)), 'error');
+      return;
+    }
+    void refreshMediaDevices();
+    showToast('Speaker switched to ' + deviceLabel('audiooutput', deviceId));
+  }
+
+  // Replaces one kind of track on the pre-join lobby stream.
+  async function switchLobbyTrack(kind) {
+    const wantVideo = kind === 'video';
+    const fresh = await navigator.mediaDevices.getUserMedia(
+      wantVideo ? { video: videoConstraint() } : { audio: audioConstraint() }
+    );
+    const newTrack = wantVideo ? fresh.getVideoTracks()[0] : fresh.getAudioTracks()[0];
+    if (!newTrack) {
+      fresh.getTracks().forEach(t => t.stop());
+      throw new Error('Selected device produced no track');
+    }
+    if (!lobbyStream) lobbyStream = new MediaStream();
+    const stale = wantVideo ? lobbyStream.getVideoTracks() : lobbyStream.getAudioTracks();
+    stale.forEach(function(t) {
+      t.stop();
+      lobbyStream.removeTrack(t);
+    });
+    lobbyStream.addTrack(newTrack);
+    newTrack.enabled = wantVideo ? camEnabled : micEnabled;
+    const lobbyVid = document.getElementById('lobbyVideo');
+    if (lobbyVid) {
+      lobbyVid.srcObject = null;
+      lobbyVid.srcObject = lobbyStream;
+    }
+    syncLobbyMediaAvailability();
+  }
+
+  // Fallback for when LiveKit cannot restart the track in place.
+  async function republishLocalTrack(kind) {
+    const wantVideo = kind === 'video';
+    const lp = livekitRoom.localParticipant;
+    const pub = wantVideo ? getLocalCameraPublication() : getLocalMicPublication();
+    const wasMuted = pub ? !!pub.isMuted : (wantVideo ? !camEnabled : !micEnabled);
+    const fresh = await navigator.mediaDevices.getUserMedia(
+      wantVideo ? { video: videoConstraint() } : { audio: audioConstraint() }
+    );
+    const newTrack = wantVideo ? fresh.getVideoTracks()[0] : fresh.getAudioTracks()[0];
+    if (!newTrack) {
+      fresh.getTracks().forEach(t => t.stop());
+      throw new Error('Selected device produced no track');
+    }
+    if (pub && pub.track) {
+      try { await lp.unpublishTrack(pub.track, true); } catch (_) {}
+    }
+    const source = wantVideo
+      ? (livekitTrackSource ? livekitTrackSource.Camera : 'camera')
+      : (livekitTrackSource ? livekitTrackSource.Microphone : 'microphone');
+    const newPub = await lp.publishTrack(newTrack, { source: source });
+    if (wasMuted && newPub) {
+      try { await newPub.mute(); } catch (_) {}
+    }
+  }
+
+  async function switchLiveInputDevice(kind) {
+    const lkKind = kind === 'video' ? 'videoinput' : 'audioinput';
+    const id = selectedDevices[lkKind];
+    if (typeof livekitRoom.switchActiveDevice === 'function') {
+      try {
+        await livekitRoom.switchActiveDevice(lkKind, id || 'default');
+        return;
+      } catch (e) {
+        console.warn('[Devices] switchActiveDevice(' + lkKind + ') failed, republishing:', e);
+      }
+    }
+    await republishLocalTrack(kind);
+  }
+
+  async function applyInputDeviceChange(kind) {
+    if (livekitRoom) await switchLiveInputDevice(kind);
+    else await switchLobbyTrack(kind);
+  }
+
+  async function setInputDevice(kind, deviceId) {
+    const prefKind = kind === 'video' ? 'videoinput' : 'audioinput';
+    const humanKind = kind === 'video' ? 'camera' : 'microphone';
+    const previous = selectedDevices[prefKind];
+    if (previous === deviceId) return;
+    saveDevicePref(prefKind, deviceId);
+    try {
+      await applyInputDeviceChange(kind);
+    } catch (e) {
+      console.warn('[Devices] ' + humanKind + ' switch failed:', e);
+      if (deviceId && isOverconstrainedError(e)) {
+        saveDevicePref(prefKind, '');
+        try {
+          await applyInputDeviceChange(kind);
+          if (kind === 'video' && livekitRoom) syncLocalCameraFromRoom();
+          void refreshMediaDevices();
+          showToast('That ' + humanKind + ' is unavailable. Using the system default.', 'info');
+          return;
+        } catch (fallbackErr) {
+          console.warn('[Devices] ' + humanKind + ' fallback failed:', fallbackErr);
+        }
+      } else {
+        saveDevicePref(prefKind, previous);
+      }
+      showToast(mediaPermissionErrorMessage(humanKind, e), 'error');
+      return;
+    }
+    if (kind === 'video' && livekitRoom) syncLocalCameraFromRoom();
+    void refreshMediaDevices();
+    showToast(DEVICE_KIND_LABEL[prefKind] + ' switched to ' + deviceLabel(prefKind, deviceId));
+  }
+
+  async function setMicrophoneDevice(deviceId) { await setInputDevice('audio', deviceId); }
+  async function setCameraDevice(deviceId) { await setInputDevice('video', deviceId); }
 
   async function startLobbyPreview() {
     try {
-      lobbyStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      lobbyStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraint(), audio: audioConstraint() });
       lobbyStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
       lobbyStream.getVideoTracks().forEach(t => t.enabled = camEnabled);
       document.getElementById('lobbyVideo').srcObject = lobbyStream;
       syncLobbyMediaAvailability();
+      // Device labels only become readable once permission has been granted.
+      void refreshMediaDevices();
       void probeMicPermission();
     } catch(e) {
+      if (clearStaleInputDevicePrefs(e)) {
+        await startLobbyPreview();
+        return;
+      }
       handleLobbyMediaError(e);
     }
   }
@@ -1774,6 +2110,8 @@ export function roomPage(
 
     // 4. Switch active room
     activeRoomId = nodeId;
+    activeEntityType = '';
+    entityFocusType = '';
     document.getElementById('roomNameDisplay').textContent = nodeId;
 
     // Update presence chip
@@ -1814,6 +2152,7 @@ export function roomPage(
     showToast('Switching to ' + nodeId + '…', 'info');
     _roomSwitching = false;
     await connectToLiveKit();
+    await fetchRoomEntities(true);
     updateTreeBadge();
   };
 
@@ -2197,9 +2536,157 @@ export function roomPage(
   }
 
   // ── Permissions panel ─────────────────────────────────────────────────────
-  function setPermission(participantId, type, value) {
-    showToast('Permission updated for ' + participantId, 'success');
+  const ENTITY_TYPES = ['whiteboard', 'browser'];
+
+  function getEntityState(type) {
+    return roomEntities[type] || null;
   }
+
+  function getEntityAccess(type) {
+    const entity = getEntityState(type);
+    return entity && entity.access ? entity.access : { canView: false, canInteract: false };
+  }
+
+  function participantKey(identity, email) {
+    return (email || identity || '').toLowerCase();
+  }
+
+  function rememberParticipant(identity, name, email, isSelf) {
+    const key = participantKey(identity, email);
+    if (!key) return;
+    participantDirectory.set(key, {
+      identity: identity || name || key,
+      name: name || identity || key,
+      email: email || '',
+      isSelf: !!isSelf,
+      role: isSelf ? userRole : 'participant',
+    });
+  }
+
+  function knownParticipants() {
+    return Array.from(participantDirectory.values()).sort(function(a, b) {
+      if (a.isSelf) return -1;
+      if (b.isSelf) return 1;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+  }
+
+  function describeRole(participant) {
+    if (!participant) return '';
+    if (participant.isSelf && userRole === 'superadmin') return 'Super Admin';
+    if (participant.isSelf && userRole === 'admin') return 'Meeting Admin';
+    if (participant.isSelf) return 'You';
+    return 'Participant';
+  }
+
+  function updateEntityButtonState(type, enabled, active) {
+    const btnId = type === 'whiteboard' ? 'whiteboardBtn' : 'virtualBrowserBtn';
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.classList.toggle('active', !!active);
+    btn.disabled = !enabled;
+    btn.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    btn.style.opacity = enabled ? '' : '.45';
+    btn.style.cursor = enabled ? '' : 'not-allowed';
+  }
+
+  function syncEntityControls() {
+    const whiteboardEnabled = !!(roomEntities.whiteboard && roomEntities.whiteboard.enabled && getEntityAccess('whiteboard').canView);
+    const browserEnabled = !!(roomEntities.browser && roomEntities.browser.enabled && getEntityAccess('browser').canView);
+    const whiteboardCtrl = document.getElementById('whiteboardCtrlGroup');
+    const whiteboardMore = document.getElementById('moreWhiteboardItem');
+    const browserCtrl = document.getElementById('virtualBrowserCtrlGroup');
+    const browserMore = document.getElementById('moreVirtualBrowserItem');
+    if (whiteboardCtrl) whiteboardCtrl.style.display = whiteboardEnabled ? '' : 'none';
+    if (whiteboardMore) whiteboardMore.style.display = whiteboardEnabled ? '' : 'none';
+    if (browserCtrl) browserCtrl.style.display = browserEnabled ? '' : 'none';
+    if (browserMore) browserMore.style.display = browserEnabled ? '' : 'none';
+    updateEntityButtonState('whiteboard', whiteboardEnabled, activeEntityType === 'whiteboard');
+    updateEntityButtonState('browser', browserEnabled, activeEntityType === 'browser');
+    const clearBtn = document.getElementById('whiteboardClearBtn');
+    if (clearBtn) clearBtn.disabled = !getEntityAccess('whiteboard').canInteract;
+  }
+
+  function renderPermissionsList() {
+    const list = document.getElementById('permsList');
+    if (!list) return;
+    if (!isAdmin) {
+      list.textContent = 'Only meeting admins can edit room entity permissions.';
+      return;
+    }
+    const participants = knownParticipants().filter(function(participant) {
+      return !!participant.email;
+    });
+    if (!participants.length) {
+      list.textContent = 'No participants yet';
+      return;
+    }
+    list.className = 'perm-list';
+    list.innerHTML = participants.map(function(participant) {
+      const role = describeRole(participant);
+      const featureRows = ENTITY_TYPES.map(function(type) {
+        const entity = getEntityState(type);
+        const accessMap = entity && entity.accessByEmail ? entity.accessByEmail : {};
+        const access = accessMap[(participant.email || '').toLowerCase()] || { canView: true, canInteract: true };
+        const permAttrs = ' data-perm-email="' + escapeHtml(participant.email) +
+          '" data-perm-entity="' + escapeHtml(type) + '" data-perm-field=';
+        return '<div class="perm-entity-card">' +
+          '<div class="perm-entity-title">' + (type === 'whiteboard' ? 'Whiteboard' : 'Browser') + '</div>' +
+          '<div class="perm-toggle-row"><label>Can view</label>' +
+          '<input type="checkbox" ' + (access.canView ? 'checked' : '') +
+          permAttrs + '"canView" /></div>' +
+          '<div class="perm-toggle-row"><label>Can interact</label>' +
+          '<input type="checkbox" ' + (access.canInteract ? 'checked' : '') + (access.canView ? '' : ' disabled') +
+          permAttrs + '"canInteract" /></div>' +
+          '</div>';
+      }).join('');
+      return '<div class="perm-participant-card">' +
+        '<div class="perm-participant-header">' +
+          '<div class="participant-avatar-sm">' + escapeHtml((participant.name || '?')[0].toUpperCase()) + '</div>' +
+          '<div class="perm-participant-meta">' +
+            '<div class="perm-participant-name">' + escapeHtml(participant.name || participant.email) + '</div>' +
+            '<div class="perm-participant-email">' + escapeHtml(participant.email) + '</div>' +
+          '</div>' +
+          '<span class="participant-role-chip">' + escapeHtml(role) + '</span>' +
+        '</div>' +
+        '<div class="perm-entity-grid">' + featureRows + '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function handlePermissionToggle(e) {
+    const input = e.target.closest ? e.target.closest('[data-perm-field]') : null;
+    if (!input) return;
+    void setPermission(
+      input.dataset.permEmail,
+      input.dataset.permEntity,
+      input.dataset.permField,
+      input.checked
+    );
+  }
+
+  async function setPermission(participantEmail, entityType, field, value) {
+    if (!isAdmin) {
+      showToast('Only meeting admins can update room entity permissions', 'info');
+      return;
+    }
+    try {
+      const body = { email: participantEmail };
+      body[field] = !!value;
+      const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/features/' + encodeURIComponent(entityType) + '/access', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(function() { return {}; });
+      if (!res.ok) throw new Error(data.error || 'Could not update permissions');
+      await fetchRoomEntities(true);
+      showToast('Permissions updated for ' + participantEmail, 'success');
+    } catch (e) {
+      showToast(e && e.message ? e.message : 'Could not update permissions', 'error');
+    }
+  }
+
   function toggleLock(type, btn) {
     btn.classList.toggle('on');
     const locked = btn.classList.contains('on');
@@ -2208,6 +2695,352 @@ export function roomPage(
       : (locked ? 'All cameras locked' : 'Cameras unlocked'),
       locked ? 'info' : 'success');
   }
+
+  async function fetchRoomEntities(silent) {
+    try {
+      const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/features');
+      const data = await res.json().catch(function() { return {}; });
+      if (!res.ok) throw new Error(data.error || 'Could not load room entities');
+      if (Array.isArray(data.entities)) {
+        data.entities.forEach(function(entity) {
+          roomEntities[entity.entityType] = entity;
+        });
+      }
+      renderRoomEntities();
+      renderPermissionsList();
+    } catch (e) {
+      if (!silent) showToast(e && e.message ? e.message : 'Could not load room entities', 'error');
+    }
+  }
+
+  function startFeaturePolling() {
+    if (featurePollTimer) clearInterval(featurePollTimer);
+    featurePollTimer = setInterval(function() {
+      fetchRoomEntities(true);
+    }, 4000);
+  }
+
+  function getVisibleEnabledEntities() {
+    return ENTITY_TYPES.filter(function(type) {
+      const entity = getEntityState(type);
+      return entity && entity.enabled && getEntityAccess(type).canView;
+    });
+  }
+
+  function ensureActiveEntitySelection() {
+    const enabled = getVisibleEnabledEntities();
+    if (!enabled.length) {
+      activeEntityType = '';
+      entityFocusType = '';
+      return;
+    }
+    if (!activeEntityType || enabled.indexOf(activeEntityType) === -1) {
+      activeEntityType = enabled[0];
+    }
+    if (entityFocusType && enabled.indexOf(entityFocusType) === -1) {
+      entityFocusType = '';
+    }
+  }
+
+  function renderRoomEntities() {
+    ensureActiveEntitySelection();
+    const layout = document.getElementById('roomLayout');
+    const stage = document.getElementById('featureStage');
+    const empty = document.getElementById('featureStageEmpty');
+    const body = document.getElementById('featureStageBody');
+    const enabled = getVisibleEnabledEntities();
+    const hasEntities = enabled.length > 0;
+    if (stage) stage.style.display = hasEntities ? 'flex' : 'none';
+    if (empty) empty.style.display = hasEntities ? 'none' : 'flex';
+    if (body) body.style.display = hasEntities ? 'flex' : 'none';
+    if (layout) {
+      layout.classList.toggle('has-entity-stage', hasEntities);
+      layout.classList.toggle('entity-expanded', !!entityFocusType);
+    }
+    ENTITY_TYPES.forEach(function(type) {
+      const shell = document.getElementById('entityShell-' + type);
+      if (!shell) return;
+      shell.classList.toggle('active', activeEntityType === type && enabled.indexOf(type) >= 0);
+      const badge = document.getElementById('entityBadge-' + type);
+      if (badge) badge.textContent = entityFocusType === type ? 'Expanded' : 'Entity';
+    });
+    syncWhiteboardEntityUi();
+    syncBrowserEntityUi();
+    syncEntityControls();
+    updateLayout();
+  }
+
+  function focusEntity(type) {
+    const entity = getEntityState(type);
+    if (!entity || !entity.enabled) {
+      showToast((type === 'whiteboard' ? 'Whiteboard' : 'Browser') + ' is not active in this room', 'info');
+      return;
+    }
+    if (!getEntityAccess(type).canView) {
+      showToast('You do not have access to this room entity', 'info');
+      return;
+    }
+    activeEntityType = type;
+    entityFocusType = type;
+    if (type === 'whiteboard') void openWhiteboard();
+    else openVirtualBrowser();
+    renderRoomEntities();
+  }
+
+  function closeEntityFocus() {
+    entityFocusType = '';
+    renderRoomEntities();
+  }
+
+  function isEntityInteractable(type) {
+    const access = getEntityAccess(type);
+    return !!(access && access.canView && access.canInteract);
+  }
+
+  function publishWhiteboardPayload(payload) {
+    if (!livekitRoom || !isEntityInteractable('whiteboard')) return;
+    try {
+      livekitRoom.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify(payload)),
+        { reliable: true }
+      );
+    } catch (e) {
+      console.warn('[whiteboard] publish failed', e);
+    }
+  }
+
+  function ensureWhiteboardInstance() {
+    if (window._whiteboard) {
+      if (typeof window._whiteboard.setReadOnly === 'function') {
+        window._whiteboard.setReadOnly(!isEntityInteractable('whiteboard'));
+      }
+      return window._whiteboard;
+    }
+    if (typeof MeetingWhiteboard === 'undefined') {
+      throw new Error('Whiteboard module failed to load');
+    }
+    const clientId = (USER_EMAIL || userName || 'anon') + '-' + Math.random().toString(36).slice(2, 6);
+    window._whiteboard = new MeetingWhiteboard({
+      mountId: 'excalidrawMount',
+      clientId: clientId,
+      readOnly: !isEntityInteractable('whiteboard'),
+      onPublish: publishWhiteboardPayload,
+      onError: function(err) {
+        console.error('[whiteboard]', err);
+        showToast('Whiteboard error: ' + (err && err.message ? err.message : String(err)), 'error');
+      },
+    });
+    return window._whiteboard;
+  }
+
+  function handleWhiteboardMessage(msg) {
+    if (!window._whiteboard) {
+      try {
+        if (
+          msg.type === 'whiteboard_scene' ||
+          msg.type === 'whiteboard_sync_response' ||
+          msg.type === 'whiteboard_scene_chunk' ||
+          msg.type === 'whiteboard_clear'
+        ) {
+          ensureWhiteboardInstance();
+        } else {
+          return;
+        }
+      } catch (_) {
+        return;
+      }
+    }
+    window._whiteboard.applyRemote(msg);
+  }
+
+  async function openWhiteboard() {
+    const entity = getEntityState('whiteboard');
+    if (!entity || !entity.enabled) {
+      showToast(isAdmin ? 'Use @add whiteboard in chat to enable it first' : 'Whiteboard is not active in this room', 'info');
+      return;
+    }
+    if (!getEntityAccess('whiteboard').canView) {
+      showToast('You do not have access to this whiteboard', 'info');
+      return;
+    }
+    try {
+      if (!livekitRoom) {
+        showToast('Join the meeting before opening the whiteboard', 'info');
+        return;
+      }
+      const wb = ensureWhiteboardInstance();
+      if (typeof wb.setReadOnly === 'function') wb.setReadOnly(!isEntityInteractable('whiteboard'));
+      await wb.open();
+      activeEntityType = 'whiteboard';
+      wb.requestSync();
+      renderRoomEntities();
+    } catch (e) {
+      console.error('[whiteboard] open failed', e);
+      showToast('Could not load whiteboard. Check your network and try again.', 'error');
+    }
+  }
+
+  function closeWhiteboard() {
+    if (window._whiteboard) window._whiteboard.close();
+    if (activeEntityType === 'whiteboard') {
+      activeEntityType = '';
+    }
+    if (entityFocusType === 'whiteboard') {
+      entityFocusType = '';
+    }
+    renderRoomEntities();
+  }
+
+  function toggleWhiteboard() {
+    if (activeEntityType === 'whiteboard' && !entityFocusType) focusEntity('whiteboard');
+    else if (activeEntityType === 'whiteboard' && entityFocusType) closeEntityFocus();
+    else void openWhiteboard();
+  }
+
+  function syncWhiteboardEntityUi() {
+    const locked = document.getElementById('whiteboardLocked');
+    const mount = document.getElementById('excalidrawMount');
+    const canView = getEntityAccess('whiteboard').canView;
+    if (locked) locked.classList.toggle('visible', !canView);
+    if (mount) mount.style.display = canView ? '' : 'none';
+    const clearBtn = document.getElementById('whiteboardClearBtn');
+    if (clearBtn) clearBtn.disabled = !isEntityInteractable('whiteboard');
+    if (window._whiteboard && typeof window._whiteboard.setReadOnly === 'function') {
+      window._whiteboard.setReadOnly(!isEntityInteractable('whiteboard'));
+    }
+  }
+
+  function clearWhiteboard() {
+    if (!window._whiteboard) return;
+    if (!isEntityInteractable('whiteboard')) {
+      showToast('You do not have permission to edit this whiteboard', 'info');
+      return;
+    }
+    if (!confirm('Clear the whiteboard for everyone in this room?')) return;
+    window._whiteboard.publishClear();
+    showToast('Whiteboard cleared', 'info');
+  }
+
+  function openVirtualBrowser() {
+    const entity = getEntityState('browser');
+    if (!entity || !entity.enabled) {
+      showToast(isAdmin ? 'Use @add browser in chat to enable it first' : 'Browser is not active in this room', 'info');
+      return;
+    }
+    if (!getEntityAccess('browser').canView) {
+      showToast('You do not have access to this browser', 'info');
+      return;
+    }
+    if (!NEKO_ENABLED || !NEKO_EMBED_URL) {
+      showToast('Virtual browser is not configured', 'info');
+      return;
+    }
+    if (!livekitRoom) {
+      showToast('Join the meeting before opening the virtual browser', 'info');
+      return;
+    }
+    const frame = document.getElementById('virtualBrowserFrame');
+    const loading = document.getElementById('virtualBrowserLoading');
+    if (frame && !frame.getAttribute('src')) {
+      if (loading) loading.classList.remove('hidden');
+      frame.onload = function() {
+        if (loading) loading.classList.add('hidden');
+      };
+      frame.setAttribute('src', NEKO_EMBED_URL);
+    } else if (loading) {
+      loading.classList.add('hidden');
+    }
+    activeEntityType = 'browser';
+    renderRoomEntities();
+  }
+
+  function closeVirtualBrowser() {
+    if (activeEntityType === 'browser') activeEntityType = '';
+    if (entityFocusType === 'browser') entityFocusType = '';
+    renderRoomEntities();
+  }
+
+  function toggleVirtualBrowser() {
+    if (activeEntityType === 'browser' && !entityFocusType) focusEntity('browser');
+    else if (activeEntityType === 'browser' && entityFocusType) closeEntityFocus();
+    else openVirtualBrowser();
+  }
+
+  function syncBrowserEntityUi() {
+    const locked = document.getElementById('virtualBrowserLocked');
+    const mount = document.querySelector('#entityShell-browser .virtual-browser-mount');
+    const blocker = document.getElementById('virtualBrowserBlocker');
+    const access = getEntityAccess('browser');
+    if (locked) locked.classList.toggle('visible', !access.canView);
+    if (mount) mount.style.display = access.canView ? '' : 'none';
+    if (blocker) blocker.classList.toggle('visible', access.canView && !access.canInteract);
+  }
+
+  function openVirtualBrowserExternal() {
+    if (!NEKO_EMBED_URL) return;
+    if (!getEntityAccess('browser').canView) {
+      showToast('You do not have access to this browser', 'info');
+      return;
+    }
+    window.open(NEKO_EMBED_URL, '_blank', 'noopener,noreferrer');
+  }
+
+  function parseEntityLifecycleCommand(raw) {
+    var match = String(raw || '').trim().match(/^@(add|remove)\s+(whiteboard|browser)\s*$/i);
+    if (!match) return null;
+    return { action: match[1].toLowerCase(), entityType: match[2].toLowerCase() };
+  }
+
+  function parseEntityTargetCommand(raw) {
+    var match = String(raw || '').trim().match(/^@(whiteboard|browser)\s+([a-z-]+)\s*$/i);
+    if (!match) return null;
+    return { entityType: match[1].toLowerCase(), command: match[2].toLowerCase() };
+  }
+
+  async function postEntityAction(entityType, action, body) {
+    const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/features/' + encodeURIComponent(entityType) + '/' + action, {
+      method: action === 'access' ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(function() { return {}; });
+    if (!res.ok) throw new Error(data.error || ('Could not ' + action + ' ' + entityType));
+    await fetchRoomEntities(true);
+    return data;
+  }
+
+  async function handleEntityChatCommand(msg) {
+    if (!isAdmin) {
+      showToast('Only meeting admins can manage room entities', 'info');
+      return true;
+    }
+    const lifecycle = parseEntityLifecycleCommand(msg);
+    if (lifecycle) {
+      await postEntityAction(lifecycle.entityType, lifecycle.action === 'add' ? 'add' : 'remove');
+      const label = lifecycle.entityType === 'whiteboard' ? 'Whiteboard' : 'Browser';
+      addSystemMessage((lifecycle.action === 'add' ? 'Enabled ' : 'Removed ') + '<strong>' + label + '</strong> as a room entity.');
+      if (lifecycle.action === 'add') {
+        if (lifecycle.entityType === 'whiteboard') void openWhiteboard();
+        else openVirtualBrowser();
+      } else if (activeEntityType === lifecycle.entityType) {
+        closeEntityFocus();
+      }
+      return true;
+    }
+    const targeted = parseEntityTargetCommand(msg);
+    if (targeted) {
+      await postEntityAction(targeted.entityType, 'command', { command: targeted.command });
+      addSystemMessage('Sent <strong>' + escapeHtml(targeted.command) + '</strong> to <strong>' +
+        (targeted.entityType === 'whiteboard' ? 'Whiteboard' : 'Browser') + '</strong>.');
+      if (targeted.command === 'expand' || targeted.command === 'focus') focusEntity(targeted.entityType);
+      if (targeted.command === 'collapse' || targeted.command === 'dock') closeEntityFocus();
+      return true;
+    }
+    return false;
+  }
+
+  startFeaturePolling();
+  setTimeout(function() { fetchRoomEntities(true); }, 0);
 
   // ── Local preview helpers are defined near lobby controls ─────────────────
 
@@ -2291,6 +3124,7 @@ export function roomPage(
       showToast('Connected to ' + activeRoomId, 'success');
       updateParticipantCount();
       updateLayout();
+      fetchRoomEntities(true).catch(function() {});
     } catch(e) {
       console.warn('[LiveKit] Demo mode:', e.message);
       showToast('Demo mode — LiveKit not configured', 'info');
@@ -2313,7 +3147,10 @@ export function roomPage(
     }
     if (track.source === 'screen_share_audio') {
       const audio = document.getElementById('remoteScreenAudio');
-      if (audio) track.attach(audio);
+      if (audio) {
+        track.attach(audio);
+        void applyAudioOutputToElement(audio);
+      }
       return;
     }
     // Camera / audio track — attach to participant's tile
@@ -2327,6 +3164,7 @@ export function roomPage(
         tile.appendChild(audio);
       }
       track.attach(audio);
+      void applyAudioOutputToElement(audio);
     } else {
       const el = tile.querySelector('video') || tile.querySelector('audio');
       track.attach(el);
@@ -2471,6 +3309,7 @@ export function roomPage(
     if (!list) return;
     const idKey = identity || name;
     if (isHiddenSystemBot(idKey)) return;
+    rememberParticipant(idKey, name, email, isSelf);
     const rowId = participantRowId(idKey);
     if (document.getElementById(rowId)) return;
     const displayName = name || idKey || '?';
@@ -2493,14 +3332,22 @@ export function roomPage(
         emailHtml +
         '<div class="participant-row-status" style="color:var(--green);font-size:11px">● Joined</div>' +
       '</div>' +
-      (isSelf ? '<div class="participant-row-actions"><span class="tag green" style="font-size:10px;padding:2px 7px">You</span></div>' : '');
+      '<div class="participant-row-actions"><span class="participant-role-chip">' + escapeHtml(describeRole({ isSelf: isSelf })) + '</span></div>';
     list.appendChild(div);
+    renderPermissionsList();
   }
 
   /** Remove a participant row from the People panel */
   function removeParticipantRow(identityOrName) {
     const el = document.getElementById(participantRowId(identityOrName));
     if (el) el.remove();
+    const target = String(identityOrName || '').toLowerCase();
+    participantDirectory.forEach(function(participant, key) {
+      if (key === target || String(participant.identity || '').toLowerCase() === target) {
+        participantDirectory.delete(key);
+      }
+    });
+    renderPermissionsList();
   }
 
   function updateParticipantCount() {
@@ -2989,6 +3836,21 @@ export function roomPage(
     console.log('[@ring] sendChat', { msg });
     if (!msg) return;
     openChatPanel();
+    const lowerMsg = msg.trim().toLowerCase();
+    const looksLikeEntityCommand =
+      lowerMsg.indexOf('@add ') === 0 ||
+      lowerMsg.indexOf('@remove ') === 0 ||
+      lowerMsg.indexOf('@whiteboard ') === 0 ||
+      lowerMsg.indexOf('@browser ') === 0;
+    if (looksLikeEntityCommand) {
+      input.value = '';
+      document.getElementById('ringCmdDropdown').style.display = 'none';
+      void handleEntityChatCommand(msg).catch(function(e) {
+        console.error('[entity] command failed', e);
+        showToast(e && e.message ? e.message : 'Entity command failed', 'error');
+      });
+      return;
+    }
     // Handle @ring command
     const ringEmail = parseRingCommand(msg);
     console.log('[@ring] parseRingCommand', ringEmail, 'codes:', [...msg].map(function(c) { return c.charCodeAt(0); }));
@@ -3178,157 +4040,6 @@ export function roomPage(
     m.style.display = open ? 'block' : 'none';
     if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
-  // ── Collaborative whiteboard (Excalidraw via public/whiteboard.js) ────────
-  let whiteboardOpen = false;
-  let whiteboardBusy = false;
-
-  function publishWhiteboardPayload(payload) {
-    if (!livekitRoom) return;
-    try {
-      livekitRoom.localParticipant.publishData(
-        new TextEncoder().encode(JSON.stringify(payload)),
-        { reliable: true }
-      );
-    } catch (e) {
-      console.warn('[whiteboard] publish failed', e);
-    }
-  }
-
-  function setWhiteboardBtnActive(active) {
-    const btn = document.getElementById('whiteboardBtn');
-    if (btn) btn.classList.toggle('active', !!active);
-  }
-
-  function ensureWhiteboardInstance() {
-    if (window._whiteboard) return window._whiteboard;
-    if (typeof MeetingWhiteboard === 'undefined') {
-      throw new Error('Whiteboard module failed to load');
-    }
-    const clientId = (USER_EMAIL || userName || 'anon') + '-' + Math.random().toString(36).slice(2, 6);
-    window._whiteboard = new MeetingWhiteboard({
-      mountId: 'excalidrawMount',
-      clientId: clientId,
-      onPublish: publishWhiteboardPayload,
-      onError: function(err) {
-        console.error('[whiteboard]', err);
-        showToast('Whiteboard error: ' + (err && err.message ? err.message : String(err)), 'error');
-      },
-    });
-    return window._whiteboard;
-  }
-
-  function handleWhiteboardMessage(msg) {
-    // Ensure instance so we can cache scenes / answer sync even before overlay open
-    if (!window._whiteboard) {
-      try {
-        if (
-          msg.type === 'whiteboard_scene' ||
-          msg.type === 'whiteboard_sync_response' ||
-          msg.type === 'whiteboard_scene_chunk' ||
-          msg.type === 'whiteboard_clear'
-        ) {
-          ensureWhiteboardInstance();
-        } else {
-          return;
-        }
-      } catch (_) {
-        return;
-      }
-    }
-    window._whiteboard.applyRemote(msg);
-  }
-
-  async function openWhiteboard() {
-    if (whiteboardBusy) return;
-    whiteboardBusy = true;
-    try {
-      if (!livekitRoom) {
-        showToast('Join the meeting before opening the whiteboard', 'info');
-        return;
-      }
-      const wb = ensureWhiteboardInstance();
-      await wb.open();
-      document.getElementById('whiteboardOverlay').classList.add('open');
-      setWhiteboardBtnActive(true);
-      whiteboardOpen = true;
-      wb.requestSync();
-    } catch (e) {
-      console.error('[whiteboard] open failed', e);
-      showToast('Could not load whiteboard. Check your network and try again.', 'error');
-    } finally {
-      whiteboardBusy = false;
-    }
-  }
-
-  function closeWhiteboard() {
-    const overlay = document.getElementById('whiteboardOverlay');
-    if (overlay) overlay.classList.remove('open');
-    if (window._whiteboard) window._whiteboard.close();
-    setWhiteboardBtnActive(false);
-    whiteboardOpen = false;
-  }
-
-  async function toggleWhiteboard() {
-    if (whiteboardOpen) closeWhiteboard();
-    else await openWhiteboard();
-  }
-
-  function clearWhiteboard() {
-    if (!window._whiteboard) return;
-    if (!confirm('Clear the whiteboard for everyone in this room?')) return;
-    window._whiteboard.publishClear();
-    showToast('Whiteboard cleared', 'info');
-  }
-
-  // ── Virtual Browser (n.eko iframe) ─────────────────────────────────────────
-  let virtualBrowserOpen = false;
-
-  function setVirtualBrowserBtnActive(active) {
-    const btn = document.getElementById('virtualBrowserBtn');
-    if (btn) btn.classList.toggle('active', !!active);
-  }
-
-  function openVirtualBrowser() {
-    if (!NEKO_ENABLED || !NEKO_EMBED_URL) {
-      showToast('Virtual browser is not configured', 'info');
-      return;
-    }
-    if (!livekitRoom) {
-      showToast('Join the meeting before opening the virtual browser', 'info');
-      return;
-    }
-    const frame = document.getElementById('virtualBrowserFrame');
-    const loading = document.getElementById('virtualBrowserLoading');
-    if (frame && !frame.getAttribute('src')) {
-      if (loading) loading.classList.remove('hidden');
-      frame.onload = function() {
-        if (loading) loading.classList.add('hidden');
-      };
-      frame.setAttribute('src', NEKO_EMBED_URL);
-    } else if (loading) {
-      loading.classList.add('hidden');
-    }
-    document.getElementById('virtualBrowserOverlay').classList.add('open');
-    setVirtualBrowserBtnActive(true);
-    virtualBrowserOpen = true;
-  }
-
-  function closeVirtualBrowser() {
-    const overlay = document.getElementById('virtualBrowserOverlay');
-    if (overlay) overlay.classList.remove('open');
-    setVirtualBrowserBtnActive(false);
-    virtualBrowserOpen = false;
-  }
-
-  function toggleVirtualBrowser() {
-    if (virtualBrowserOpen) closeVirtualBrowser();
-    else openVirtualBrowser();
-  }
-
-  function openVirtualBrowserExternal() {
-    if (!NEKO_EMBED_URL) return;
-    window.open(NEKO_EMBED_URL, '_blank', 'noopener,noreferrer');
-  }
 
   function showInfo()         { showInfoModal(); }
 
@@ -3443,8 +4154,126 @@ export function roomPage(
     showToast(recording ? 'Recording started' : 'Recording stopped',
               recording ? 'success' : 'info');
   }
-  function showAudioMenu() { showToast('Audio device selection coming soon', 'info'); }
-  function showVideoMenu() { showToast('Video device selection coming soon', 'info'); }
+  // ── Device menus ──────────────────────────────────────────────────────────
+  const DEVICE_CHECK_SVG =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" ' +
+    'stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+  function deviceMenuEl(which) {
+    return document.getElementById(which === 'video' ? 'videoDeviceMenu' : 'audioDeviceMenu');
+  }
+
+  function deviceSectionHtml(title, kind) {
+    const list = mediaDevices[kind] || [];
+    let rows;
+    if (!list.length) {
+      rows = '<div class="device-menu-empty">No ' + escapeHtml(title.toLowerCase()) + ' detected</div>';
+    } else {
+      const selected = selectedDevices[kind];
+      rows = list.map(function(d, i) {
+        const active = selected
+          ? selected === d.deviceId
+          : (d.deviceId === 'default' || (i === 0 && !list.some(function(x) { return x.deviceId === 'default'; })));
+        return '<button class="device-menu-item' + (active ? ' active' : '') + '"' +
+          ' role="menuitemradio" aria-checked="' + (active ? 'true' : 'false') + '"' +
+          ' data-kind="' + kind + '" data-device-id="' + escapeHtml(d.deviceId) + '">' +
+          '<span class="device-menu-check">' + (active ? DEVICE_CHECK_SVG : '') + '</span>' +
+          '<span class="device-menu-text">' + escapeHtml(d.label) + '</span>' +
+        '</button>';
+      }).join('');
+    }
+    return '<div class="device-menu-section">' +
+      '<div class="device-menu-label">' + escapeHtml(title) + '</div>' + rows +
+    '</div>';
+  }
+
+  function speakerSectionHtml() {
+    if (supportsSpeakerSelection()) return deviceSectionHtml('Speaker', 'audiooutput');
+    return '<div class="device-menu-section">' +
+      '<div class="device-menu-label">Speaker</div>' +
+      '<div class="device-menu-empty">System default — this browser cannot switch audio output</div>' +
+    '</div>';
+  }
+
+  function renderDeviceMenu(which) {
+    const menu = deviceMenuEl(which);
+    if (!menu) return;
+    menu.innerHTML = which === 'video'
+      ? deviceSectionHtml('Camera', 'videoinput')
+      : (deviceSectionHtml('Microphone', 'audioinput') + speakerSectionHtml());
+  }
+
+  function positionDeviceMenu(menu, anchor) {
+    const rect = anchor && anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+    if (!rect) {
+      menu.style.left = '50%';
+      menu.style.top = 'auto';
+      menu.style.bottom = 'calc(var(--control-bar-stack, 80px) + 8px)';
+      menu.style.transform = 'translateX(-50%)';
+      return;
+    }
+    menu.style.transform = 'none';
+    menu.style.bottom = 'auto';
+    const width = menu.offsetWidth || 260;
+    const height = menu.offsetHeight || 240;
+    const left = Math.max(12, Math.min(
+      rect.left + rect.width / 2 - width / 2,
+      window.innerWidth - width - 12
+    ));
+    menu.style.left = left + 'px';
+    menu.style.top = rect.top > height + 16
+      ? (rect.top - height - 10) + 'px'
+      : Math.max(12, Math.min(rect.bottom + 10, window.innerHeight - height - 12)) + 'px';
+  }
+
+  function closeDeviceMenus() {
+    deviceMenuOpenFor = null;
+    const audio = document.getElementById('audioDeviceMenu');
+    const video = document.getElementById('videoDeviceMenu');
+    if (audio) audio.style.display = 'none';
+    if (video) video.style.display = 'none';
+  }
+
+  function openDeviceMenu(which, anchor) {
+    const menu = deviceMenuEl(which);
+    if (!menu) return;
+    closeDeviceMenus();
+    const more = document.getElementById('moreMenu');
+    if (more) more.style.display = 'none';
+    closeTopbarMenu();
+    deviceMenuOpenFor = which;
+    renderDeviceMenu(which);
+    menu.style.display = 'block';
+    positionDeviceMenu(menu, anchor);
+    // Re-enumerate so labels and hot-plugged devices are current.
+    refreshMediaDevices().then(function() {
+      if (deviceMenuOpenFor === which) positionDeviceMenu(menu, anchor);
+    });
+  }
+
+  function toggleDeviceMenu(which, anchor) {
+    if (deviceMenuOpenFor === which) closeDeviceMenus();
+    else openDeviceMenu(which, anchor);
+  }
+
+  function showAudioMenu(anchor) {
+    toggleDeviceMenu('audio', anchor || document.getElementById('micBtn'));
+  }
+  function showVideoMenu(anchor) {
+    toggleDeviceMenu('video', anchor || document.getElementById('camBtn'));
+  }
+
+  function handleDeviceMenuClick(e) {
+    e.stopPropagation();
+    const btn = e.target.closest ? e.target.closest('.device-menu-item') : null;
+    if (!btn) return;
+    const kind = btn.dataset.kind;
+    const deviceId = btn.dataset.deviceId || '';
+    closeDeviceMenus();
+    if (kind === 'audioinput') void setMicrophoneDevice(deviceId);
+    else if (kind === 'audiooutput') void setSpeakerDevice(deviceId);
+    else if (kind === 'videoinput') void setCameraDevice(deviceId);
+  }
 
   // ── Meeting Info modal ────────────────────────────────────────────────────
   function showInfoModal() {
@@ -3615,6 +4444,10 @@ export function roomPage(
   document.getElementById('topbarMenu').addEventListener('click', function(e) {
     e.stopPropagation();
   });
+  document.getElementById('audioDeviceMenu').addEventListener('click', handleDeviceMenuClick);
+  document.getElementById('videoDeviceMenu').addEventListener('click', handleDeviceMenuClick);
+  document.getElementById('permsList')?.addEventListener('change', handlePermissionToggle);
+  window.addEventListener('resize', closeDeviceMenus);
   document.getElementById('roomLayout').addEventListener('pointerdown', function(e) {
     if (!panelOpen) return;
     if (!window.matchMedia('(max-width: 860px)').matches) return;
@@ -3630,6 +4463,9 @@ export function roomPage(
       document.getElementById('reactionsPicker').style.display = 'none';
     if (!e.target.closest('#ringCmdDropdown') && !e.target.closest('#chatInput'))
       document.getElementById('ringCmdDropdown').style.display = 'none';
+    if (!e.target.closest('.device-menu') && !e.target.closest('.ctrl-btn-caret')
+        && !e.target.closest('.more-menu-item'))
+      closeDeviceMenus();
   });
   window.addEventListener('resize', function() {
     if (!window.matchMedia('(max-width: 860px)').matches) closeTopbarMenu();
@@ -3637,12 +4473,22 @@ export function roomPage(
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
-    if (virtualBrowserOpen) {
+    if (deviceMenuOpenFor) {
+      closeDeviceMenus();
+      e.preventDefault();
+      return;
+    }
+    if (entityFocusType) {
+      closeEntityFocus();
+      e.preventDefault();
+      return;
+    }
+    if (activeEntityType === 'browser') {
       closeVirtualBrowser();
       e.preventDefault();
       return;
     }
-    if (whiteboardOpen) {
+    if (activeEntityType === 'whiteboard') {
       closeWhiteboard();
       e.preventDefault();
       return;

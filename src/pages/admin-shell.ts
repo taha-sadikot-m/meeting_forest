@@ -1,5 +1,7 @@
 /** Shared chrome for admin pages (overview / users). */
 
+import { openReplayHeadScript } from "../openreplay";
+
 export function adminShell(opts: {
   title: string;
   active: "overview" | "users";
@@ -18,6 +20,7 @@ export function adminShell(opts: {
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>${title} — Meeting Forest Admin</title>
   <link rel="stylesheet" href="/public/styles.css"/>
+  ${openReplayHeadScript({ email })}
   <style>
     :root {
       --admin-bg: #f6f4f1;

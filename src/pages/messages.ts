@@ -17,7 +17,7 @@ export function messagesPage(user: { name: string; email: string }): string {
   <title>Meeting Forest — Messages</title>
   <link rel="stylesheet" href="/public/styles.css" />
   <link rel="stylesheet" href="/public/messages.css" />
-  ${sidebarCollapseInitScript()}
+  ${sidebarCollapseInitScript(user)}
 </head>
 <body>
 

@@ -72,6 +72,14 @@ import {
   handleLookupUsers,
   handleSendMessage,
 } from "./src/api/message-handlers";
+import {
+  getEffectiveRoomEntityAccess,
+  listRoomEntities,
+  setRoomEntityAccess,
+  setRoomEntityEnabled,
+  setRoomEntityLayoutMode,
+  type RoomEntityType,
+} from "./src/room-features";
 
 const PORT = config.port;
 const APP_URL = config.appUrl;
@@ -124,6 +132,47 @@ function html(body: string, extra?: Record<string, string>): Response {
 
 function redirect(location: string, headers?: Record<string, string>): Response {
   return new Response(null, { status: 302, headers: { Location: location, ...headers } });
+}
+
+function isRoomEntityType(value: string): value is RoomEntityType {
+  return value === "whiteboard" || value === "browser";
+}
+
+async function getMeetingAdminContext(email: string, mid: string): Promise<{
+  authorized: boolean;
+  label: string;
+  adminName: string;
+}> {
+  let label = mid;
+  let adminName = "Host";
+  const creatorRecs = await runQuery(
+    "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) " +
+    "RETURN m.label AS label, m.adminName AS adminName",
+    { email, mid }
+  );
+  if (creatorRecs.length) {
+    return {
+      authorized: true,
+      label: (creatorRecs[0].get("label") as string) || mid,
+      adminName: (creatorRecs[0].get("adminName") as string) || adminName,
+    };
+  }
+
+  const adminRecs = await runQuery(
+    "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) " +
+    "WHERE r.role IN ['admin', 'superadmin'] AND r.leftAt IS NULL " +
+    "RETURN m.label AS label, m.adminName AS adminName",
+    { email, mid }
+  );
+  if (adminRecs.length) {
+    return {
+      authorized: true,
+      label: (adminRecs[0].get("label") as string) || mid,
+      adminName: (adminRecs[0].get("adminName") as string) || adminName,
+    };
+  }
+
+  return { authorized: false, label, adminName };
 }
 
 /** Link Cognito identity to Memgraph :User by email (preserves existing meetings/data). */
@@ -644,6 +693,75 @@ serve({
       } catch (e) { return json({ error: String(e) }, 500); }
     }
 
+    const roomEntitiesMatch = path.match(/^\/api\/meetings\/([^/]+)\/features$/);
+    if (roomEntitiesMatch && req.method === "GET") {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(roomEntitiesMatch[1]);
+      try {
+        const adminContext = await getMeetingAdminContext(session.email, mid);
+        const browserAvailable = Boolean(config.neko.url.trim());
+        const entities = listRoomEntities(mid, browserAvailable).map((entity) => ({
+          ...entity,
+          access: getEffectiveRoomEntityAccess(entity, session.email, adminContext.authorized),
+        }));
+        return json({
+          meetingId: mid,
+          isAdmin: adminContext.authorized,
+          entities,
+        });
+      } catch (e) { return json({ error: String(e) }, 500); }
+    }
+
+    const roomEntityActionMatch = path.match(/^\/api\/meetings\/([^/]+)\/features\/([^/]+)\/(add|remove|command|access)$/);
+    if (roomEntityActionMatch) {
+      if (!session) return json({ error: "Unauthorized" }, 401);
+      const mid = decodeURIComponent(roomEntityActionMatch[1]);
+      const entityTypeRaw = decodeURIComponent(roomEntityActionMatch[2]);
+      const action = roomEntityActionMatch[3];
+      if (!isRoomEntityType(entityTypeRaw)) return json({ error: "Unknown entity type" }, 404);
+      try {
+        const adminContext = await getMeetingAdminContext(session.email, mid);
+        if (!adminContext.authorized) {
+          return json({ error: "Only meeting admins can manage room entities" }, 403);
+        }
+        const browserAvailable = Boolean(config.neko.url.trim());
+        if (action === "add" && req.method === "POST") {
+          const entity = setRoomEntityEnabled(mid, entityTypeRaw, true, browserAvailable);
+          return json({ ok: true, meetingId: mid, entity });
+        }
+        if (action === "remove" && req.method === "POST") {
+          const entity = setRoomEntityEnabled(mid, entityTypeRaw, false, browserAvailable);
+          return json({ ok: true, meetingId: mid, entity });
+        }
+        if (action === "access" && req.method === "PATCH") {
+          const b = await req.json() as {
+            email?: string;
+            canView?: boolean;
+            canInteract?: boolean;
+          };
+          const entity = setRoomEntityAccess(mid, entityTypeRaw, b.email || "", {
+            canView: typeof b.canView === "boolean" ? b.canView : undefined,
+            canInteract: typeof b.canInteract === "boolean" ? b.canInteract : undefined,
+          }, browserAvailable);
+          return json({ ok: true, meetingId: mid, entity });
+        }
+        if (action === "command" && req.method === "POST") {
+          const b = await req.json() as { command?: string };
+          const command = (b.command || "").trim().toLowerCase();
+          let layoutMode: "hidden" | "docked" | "expanded";
+          if (command === "expand" || command === "focus") layoutMode = "expanded";
+          else if (command === "dock" || command === "collapse") layoutMode = "docked";
+          else if (command === "hide") layoutMode = "hidden";
+          else return json({ error: "Unsupported entity command" }, 400);
+          const entity = setRoomEntityLayoutMode(mid, entityTypeRaw, layoutMode, browserAvailable);
+          return json({ ok: true, meetingId: mid, entity });
+        }
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : String(e) }, 500);
+      }
+      return json({ error: "Method not allowed" }, 405);
+    }
+
     const ensureAgentHostMatch = path.match(/^\/api\/meetings\/([^/]+)\/ensure-agent-host$/);
     if (ensureAgentHostMatch && req.method === "POST") {
       if (!session) return json({ error: "Unauthorized" }, 401);
@@ -654,42 +772,16 @@ serve({
           return json({ error: "AI Agent co-host is not enabled for this meeting" }, 400);
         }
 
-        let label = mid;
-        let creatorName = session.name || "Host";
-        let authorized = false;
-
-        const creatorRecs = await runQuery(
-          "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) " +
-          "RETURN m.label AS label, m.adminName AS adminName",
-          { email: session.email, mid }
-        );
-        if (creatorRecs.length) {
-          authorized = true;
-          label = (creatorRecs[0].get("label") as string) || mid;
-          creatorName = session.name || (creatorRecs[0].get("adminName") as string) || "Host";
-        } else {
-          const adminRecs = await runQuery(
-            "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) " +
-            "WHERE r.role IN ['admin', 'superadmin'] AND r.leftAt IS NULL " +
-            "RETURN m.label AS label, m.adminName AS adminName",
-            { email: session.email, mid }
-          );
-          if (adminRecs.length) {
-            authorized = true;
-            label = (adminRecs[0].get("label") as string) || mid;
-            creatorName = session.name || (adminRecs[0].get("adminName") as string) || "Host";
-          }
-        }
-
-        if (!authorized) {
+        const adminContext = await getMeetingAdminContext(session.email, mid);
+        if (!adminContext.authorized) {
           return json({ error: "Only meeting admins can ensure the AI Agent" }, 403);
         }
 
         const workflowId = await enableAgentHostOnMeeting({
           meetingId: mid,
-          label,
+          label: adminContext.label,
           creatorEmail: session.email,
-          creatorName,
+          creatorName: session.name || adminContext.adminName || "Host",
         });
         return json({ ok: true, meetingId: mid, workflowId, agentHostEnabled: true });
       } catch (e) {

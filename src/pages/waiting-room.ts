@@ -1,3 +1,5 @@
+import { openReplayHeadScript } from "../openreplay";
+
 export function waitingRoomPage(
   roomId: string,
   user: { name: string; email: string },
@@ -15,6 +17,7 @@ export function waitingRoomPage(
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Waiting to Join — Meeting Forest</title>
   <link rel="stylesheet" href="/public/styles.css" />
+  ${openReplayHeadScript(user)}
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {

@@ -55,6 +55,7 @@
       this.reconcileElements = null;
       this.Excalidraw = null;
       this.sceneEpoch = 0;
+      this.readOnly = !!opts.readOnly;
     }
 
     async ensureLoaded() {
@@ -110,6 +111,40 @@
       else el.classList.add("hidden");
     }
 
+    _renderApp() {
+      if (!this.root || !this.Excalidraw) return;
+      const self = this;
+      const initial = this.lastElements.length ? this.lastElements : undefined;
+      this.root.render(
+        this.React.createElement(this.Excalidraw, {
+          excalidrawAPI: function (api) {
+            self.api = api;
+            self._setLoading(false);
+            if (self.lastElements.length) {
+              self._applyElements(self.lastElements);
+            }
+          },
+          initialData: initial
+            ? { elements: initial, scrollToContent: true }
+            : undefined,
+          onChange: function (elements) {
+            if (self.applyingRemote || self.readOnly) return;
+            self.lastElements = slimElements(elements);
+            self._schedulePublish(self.lastElements);
+          },
+          viewModeEnabled: !!self.readOnly,
+          UIOptions: {
+            canvasActions: {
+              loadScene: false,
+              saveToActiveFile: false,
+              clearCanvas: !self.readOnly,
+            },
+          },
+          theme: "light",
+        })
+      );
+    }
+
     async open() {
       await this.ensureLoaded();
       const mount = this._mountEl();
@@ -128,38 +163,10 @@
           mount.appendChild(host);
         }
         this.root = this.ReactDOM.createRoot(host);
-
-        const self = this;
-        const initial = this.lastElements.length ? this.lastElements : undefined;
-
-        this.root.render(
-          this.React.createElement(this.Excalidraw, {
-            excalidrawAPI: function (api) {
-              self.api = api;
-              self._setLoading(false);
-              if (self.lastElements.length) {
-                self._applyElements(self.lastElements);
-              }
-            },
-            initialData: initial
-              ? { elements: initial, scrollToContent: true }
-              : undefined,
-            onChange: function (elements) {
-              if (self.applyingRemote) return;
-              self.lastElements = slimElements(elements);
-              self._schedulePublish(self.lastElements);
-            },
-            UIOptions: {
-              canvasActions: {
-                loadScene: false,
-                saveToActiveFile: false,
-              },
-            },
-            theme: "light",
-          })
-        );
+        this._renderApp();
       } else {
         this._setLoading(false);
+        this._renderApp();
         if (this.lastElements.length) this._applyElements(this.lastElements);
       }
 
@@ -260,6 +267,13 @@
         type: "whiteboard_sync_request",
         from: this.clientId,
       });
+    }
+
+    setReadOnly(readOnly) {
+      const next = !!readOnly;
+      if (this.readOnly === next) return;
+      this.readOnly = next;
+      if (this.root) this._renderApp();
     }
 
     respondToSync(requestFrom) {

@@ -1,3 +1,5 @@
+import { openReplayHeadScript } from "../openreplay";
+
 export function resetPasswordPage(email: string = ""): string {
   const safeEmail = email.replace(/[^a-zA-Z0-9@._+-]/g, "").toLowerCase();
   return `<!DOCTYPE html>
@@ -9,6 +11,7 @@ export function resetPasswordPage(email: string = ""): string {
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
   <link rel="stylesheet" href="/public/auth.css"/>
+  ${openReplayHeadScript()}
 </head>
 <body>
 <div class="auth-wrap">
