@@ -1120,7 +1120,8 @@ body.no-screen-share #shareBtn {
   max-width: min(360px, calc(100vw - 24px));
   max-height: min(60dvh, 420px);
   overflow-y: auto;
-  z-index: 240;
+  /* Above .lobby-overlay (500) so the picker is usable on the join screen. */
+  z-index: 520;
   box-shadow: 0 16px 48px rgba(0,0,0,.5);
 }
 .device-menu-section + .device-menu-section {
