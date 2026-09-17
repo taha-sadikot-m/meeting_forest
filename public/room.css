@@ -1177,40 +1177,113 @@ body.no-screen-share #shareBtn {
 }
 
 /* ── Chat command palette (@ dropdown) ────────────────────────────────────── */
+/* Lives inside the 320px chat panel, so rows are single-line and the hint
+   column is the first thing allowed to shrink. */
+.chat-cmd-menu {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: rgba(24,24,24,.97);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  padding: 4px 0 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: min(44dvh, 360px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.5);
+  z-index: 50;
+}
+
+.chat-cmd-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.38);
+}
+.chat-cmd-group svg { flex-shrink: 0; }
+.chat-cmd-group:not(:first-child) {
+  border-top: 1px solid rgba(255,255,255,.07);
+  margin-top: 4px;
+}
+
 .chat-cmd-option {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 11px 14px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
   cursor: pointer;
-  transition: background .15s;
+  transition: background .12s;
 }
-.chat-cmd-option:hover { background: rgba(209,80,0,.12); }
-.chat-cmd-option + .chat-cmd-option { border-top: 1px solid rgba(255,255,255,.06); }
-.chat-cmd-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  background: rgba(209,80,0,.15);
-  border: 1px solid rgba(209,80,0,.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.chat-cmd-text { min-width: 0; }
+.chat-cmd-option.active { background: rgba(209,80,0,.18); }
 .chat-cmd-label {
-  font-size: 13px;
-  font-weight: 700;
-  color: rgba(255,255,255,.9);
+  flex-shrink: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,.62);
+  white-space: nowrap;
 }
+/* The typed prefix, so the filter match is visible at a glance. */
+.chat-cmd-label b {
+  font-weight: 700;
+  color: #ff8a3d;
+}
+.chat-cmd-option.active .chat-cmd-label { color: white; }
+.chat-cmd-arg {
+  margin-left: 4px;
+  font-style: normal;
+  color: rgba(255,255,255,.3);
+}
+.chat-cmd-arg::before { content: '<'; }
+.chat-cmd-arg::after  { content: '>'; }
 .chat-cmd-hint {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
   font-size: 11px;
-  color: rgba(255,255,255,.4);
-  margin-top: 1px;
+  color: rgba(255,255,255,.34);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.chat-cmd-empty {
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255,255,255,.35);
+}
+
+.chat-cmd-foot {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  position: sticky;
+  bottom: 0;
+  margin-top: 4px;
+  padding: 6px 12px;
+  background: rgba(16,16,16,.95);
+  border-top: 1px solid rgba(255,255,255,.07);
+  font-size: 10px;
+  color: rgba(255,255,255,.3);
+}
+.chat-cmd-foot kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  margin-right: 2px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.1);
 }
 
 /* ── Waiting panel ────────────────────────────────────────────────────────── */

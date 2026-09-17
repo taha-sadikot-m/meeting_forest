@@ -37,7 +37,17 @@ mustContain('command menu renderer', 'function renderChatCommandMenu');
 mustContain('command menu picker', 'function handleChatCommandPick');
 mustNotContain('no hardcoded ring option', 'onclick="selectRingCmd()"');
 
-// 4. Inside the page template literal every regex escape class needs a doubled
+// 4. Menu styling lives in room.css, and the palette is keyboard reachable.
+mustContain('menu uses css class', 'class="chat-cmd-menu" id="ringCmdDropdown"');
+mustNotContain('no inline menu background', 'background:#1e1e1e');
+mustContain('listbox role', 'role="listbox"');
+mustContain('input is a combobox', 'role="combobox"');
+mustContain('input advertises the list', 'aria-controls="chatCmdMenuList"');
+mustContain('keyboard nav wired', 'function moveChatCmdActive');
+mustContain('enter picks highlighted row', 'activateChatCommand(picked)');
+mustContain('empty state', 'No matching command');
+
+// 5. Inside the page template literal every regex escape class needs a doubled
 // backslash to survive into the browser. Scan the source for single ones.
 const source = readFileSync(new URL('../src/pages/room.ts', import.meta.url), 'utf8');
 const templateStart = source.indexOf('return /* html */`');
@@ -52,7 +62,7 @@ checks.push({
   detail: singles.map(({ line, no }) => '+' + no + ': ' + line.trim()).join(' | '),
 });
 
-// 5. The inline client script must parse. A stray quote inside the template
+// 6. The inline client script must parse. A stray quote inside the template
 // literal silently kills every handler on the page.
 const inline = html.slice(html.indexOf('<script>', html.indexOf('/public/whiteboard.js')) + '<script>'.length);
 const clientScript = inline.slice(0, inline.indexOf('</script>'));
@@ -68,7 +78,19 @@ checks.push({
   detail: parseError || 'script not found',
 });
 
-// 6. Run the emitted parsers against real input. They are self-contained, so
+// 7. Command hints share a row with the command itself inside a 320px panel.
+// Anything much longer than this ellipsizes to a stub, which is the defect
+// that made the first version of this menu unreadable.
+const HINT_LIMIT = 24;
+const hints = [...clientScript.matchAll(/hint: '([^']*)'/g)].map((m) => m[1]);
+const longHints = hints.filter((h) => h.length > HINT_LIMIT);
+checks.push({
+  name: 'command hints fit the panel',
+  ok: hints.length >= 8 && longHints.length === 0,
+  detail: hints.length < 8 ? 'only found ' + hints.length + ' hints' : 'too long: ' + longHints.join(', '),
+});
+
+// 8. Run the emitted parsers against real input. They are self-contained, so
 // they can be lifted out of the client script and exercised directly.
 function extractFn(name: string) {
   const start = clientScript.indexOf('function ' + name + '(');

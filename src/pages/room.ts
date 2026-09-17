@@ -316,12 +316,12 @@ export function roomPage(
         <div class="chat-msg-system">Meeting started — ${new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})}</div>
       </div>
       <div class="chat-input-area" style="position:relative">
-        <!-- @ring command dropdown -->
-        <div id="ringCmdDropdown" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow-y:auto;max-height:min(46vh,300px);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:50">
-          <div id="chatCmdMenuList"></div>
+        <!-- Chat command palette (opens when the message starts with @) -->
+        <div class="chat-cmd-menu" id="ringCmdDropdown">
+          <div id="chatCmdMenuList" role="listbox" aria-label="Chat commands"></div>
         </div>
         <div class="chat-input-wrap">
-          <input class="chat-input" id="chatInput" placeholder="${hasAgentHost ? 'Message everyone… (@agent to instruct the AI co-host)' : 'Message everyone… (type @ for commands)'}" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
+          <input class="chat-input" id="chatInput" placeholder="${hasAgentHost ? 'Message everyone… (@agent to instruct the AI co-host)' : 'Message everyone… (type @ for commands)'}" role="combobox" aria-controls="chatCmdMenuList" aria-autocomplete="list" aria-expanded="false" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
           <button class="chat-emoji-btn" onclick="addEmoji()">😊</button>
         </div>
         <button class="chat-send-btn" onclick="sendChat()">
@@ -3687,6 +3687,22 @@ export function roomPage(
 
   // ── Chat ──────────────────────────────────────────────────────────────────
   function handleChatKey(e) {
+    // While the command palette is open it owns the navigation keys, so Enter
+    // picks the highlighted command instead of sending the raw text.
+    if (isChatCommandMenuOpen()) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveChatCmdActive(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); moveChatCmdActive(-1); return; }
+      if (e.key === 'Escape')    { e.preventDefault(); closeChatCommandMenu(); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        const picked = chatCmdMatches[chatCmdIndex];
+        if (picked) {
+          e.preventDefault();
+          activateChatCommand(picked);
+          return;
+        }
+        closeChatCommandMenu();
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       console.log('[@ring] Enter pressed, calling sendChat');
@@ -3694,18 +3710,37 @@ export function roomPage(
     }
   }
 
-  // Slash-style command palette. "complete" entries run on selection;
-  // the rest are inserted so the user can finish typing an argument.
+  // Chat command palette. "complete" entries run as soon as they are picked;
+  // the rest are inserted so the user can type the argument.
+  // Hints stay short on purpose: the chat panel is 320px, which leaves the
+  // hint column roughly 110px before it starts truncating.
   const CHAT_COMMANDS = [
-    { label: '@ring', value: '@ring ', hint: 'Call someone to join this meeting', icon: 'phone' },
-    { label: '@add whiteboard', value: '@add whiteboard', hint: 'Add the whiteboard to this room', icon: 'board', complete: true, admin: true },
-    { label: '@remove whiteboard', value: '@remove whiteboard', hint: 'Remove the whiteboard from this room', icon: 'board', complete: true, admin: true },
-    { label: '@whiteboard expand', value: '@whiteboard expand', hint: 'Expand the whiteboard panel', icon: 'board', complete: true, admin: true },
-    { label: '@whiteboard dock', value: '@whiteboard dock', hint: 'Shrink the whiteboard back to the side panel', icon: 'board', complete: true, admin: true },
-    { label: '@add browser', value: '@add browser', hint: 'Add the virtual browser to this room', icon: 'globe', complete: true, admin: true, neko: true },
-    { label: '@remove browser', value: '@remove browser', hint: 'Remove the virtual browser from this room', icon: 'globe', complete: true, admin: true, neko: true },
-    { label: '@browser expand', value: '@browser expand', hint: 'Expand the virtual browser panel', icon: 'globe', complete: true, admin: true, neko: true },
+    { group: 'invite', label: '@ring', arg: 'email', value: '@ring ', hint: 'Call someone in' },
+    { group: 'invite', label: '@agent', arg: 'instruction', value: '@agent ', hint: 'Ask the co-host', agent: true },
+    { group: 'whiteboard', label: '@add whiteboard', value: '@add whiteboard', hint: 'Add to room', complete: true, admin: true },
+    { group: 'whiteboard', label: '@remove whiteboard', value: '@remove whiteboard', hint: 'Remove from room', complete: true, admin: true },
+    { group: 'whiteboard', label: '@whiteboard expand', value: '@whiteboard expand', hint: 'Make it full size', complete: true, admin: true },
+    { group: 'whiteboard', label: '@whiteboard dock', value: '@whiteboard dock', hint: 'Back to panel', complete: true, admin: true },
+    { group: 'browser', label: '@add browser', value: '@add browser', hint: 'Add to room', complete: true, admin: true, neko: true },
+    { group: 'browser', label: '@remove browser', value: '@remove browser', hint: 'Remove from room', complete: true, admin: true, neko: true },
+    { group: 'browser', label: '@browser expand', value: '@browser expand', hint: 'Make it full size', complete: true, admin: true, neko: true },
   ];
+
+  const CHAT_COMMAND_GROUPS = [
+    { id: 'invite', label: 'Invite', icon: 'phone' },
+    { id: 'whiteboard', label: 'Whiteboard', icon: 'board' },
+    { id: 'browser', label: 'Browser', icon: 'globe' },
+  ];
+
+  let chatCmdMatches = [];
+  let chatCmdIndex = -1;
+
+  function chatCmdGroup(id) {
+    for (var i = 0; i < CHAT_COMMAND_GROUPS.length; i++) {
+      if (CHAT_COMMAND_GROUPS[i].id === id) return CHAT_COMMAND_GROUPS[i];
+    }
+    return { id: id, label: id, icon: 'phone' };
+  }
 
   function chatCmdIconPaths(kind) {
     if (kind === 'board') {
@@ -3722,52 +3757,123 @@ export function roomPage(
   }
 
   function availableChatCommands(filter) {
-    const needle = normalizeCommandText(filter).toLowerCase();
+    const raw = normalizeCommandText(filter).toLowerCase();
+    const needle = raw === '@' ? '' : raw;
     return CHAT_COMMANDS.filter(function(cmd) {
       if (cmd.admin && !entityAdmin) return false;
       if (cmd.neko && !NEKO_ENABLED) return false;
-      if (!needle || needle === '@') return true;
+      if (cmd.agent && !HAS_AGENT_HOST) return false;
+      if (!needle) return true;
       return cmd.label.indexOf(needle) === 0;
     });
   }
 
-  function renderChatCommandMenu(filter) {
+  function isChatCommandMenuOpen() {
+    const drop = document.getElementById('ringCmdDropdown');
+    return !!drop && drop.style.display === 'block';
+  }
+
+  function renderChatCommandMenu(filter, keepIndex) {
     const list = document.getElementById('chatCmdMenuList');
     const drop = document.getElementById('ringCmdDropdown');
     if (!list || !drop) return;
+    const value = normalizeCommandText(filter);
     const matches = availableChatCommands(filter);
+    chatCmdMatches = matches;
     if (!matches.length) {
-      list.innerHTML = '';
-      drop.style.display = 'none';
+      // Once the text contains a space it is an ordinary message, so the menu
+      // gets out of the way. A bare mistyped command gets an empty state.
+      if (value.indexOf(' ') >= 0) {
+        closeChatCommandMenu();
+        return;
+      }
+      chatCmdIndex = -1;
+      list.innerHTML = '<div class="chat-cmd-empty">No matching command</div>';
+      openChatCommandMenu();
       return;
     }
-    list.innerHTML = matches.map(function(cmd) {
-      return '<div class="chat-cmd-option" data-cmd-value="' + escapeHtml(cmd.value) + '"' +
-        (cmd.complete ? ' data-cmd-complete="1"' : '') + '>' +
-        '<div class="chat-cmd-icon">' +
-          '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">' +
-          chatCmdIconPaths(cmd.icon) +
-          '</svg>' +
-        '</div>' +
-        '<div class="chat-cmd-text">' +
-          '<div class="chat-cmd-label">' + escapeHtml(cmd.label) + '</div>' +
-          '<div class="chat-cmd-hint">' + escapeHtml(cmd.hint) + '</div>' +
-        '</div>' +
+    if (!keepIndex || chatCmdIndex < 0 || chatCmdIndex >= matches.length) chatCmdIndex = 0;
+    // Everything in matches passed an indexOf(needle) === 0 test, so the typed
+    // text is always a prefix of the label and can be highlighted by slicing.
+    const matchLen = value === '@' ? 0 : value.length;
+    let html = '';
+    let lastGroup = '';
+    matches.forEach(function(cmd, i) {
+      if (cmd.group !== lastGroup) {
+        lastGroup = cmd.group;
+        const group = chatCmdGroup(cmd.group);
+        html += '<div class="chat-cmd-group">' +
+          '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5">' +
+          chatCmdIconPaths(group.icon) +
+          '</svg><span>' + escapeHtml(group.label) + '</span>' +
+        '</div>';
+      }
+      html += '<div class="chat-cmd-option" id="chatCmd-' + i + '" role="option"' +
+        ' aria-selected="' + (i === chatCmdIndex ? 'true' : 'false') + '"' +
+        ' data-cmd-index="' + i + '">' +
+        '<span class="chat-cmd-label">' +
+          (matchLen ? '<b>' + escapeHtml(cmd.label.slice(0, matchLen)) + '</b>' : '') +
+          escapeHtml(cmd.label.slice(matchLen)) +
+          (cmd.arg ? '<i class="chat-cmd-arg">' + escapeHtml(cmd.arg) + '</i>' : '') +
+        '</span>' +
+        '<span class="chat-cmd-hint">' + escapeHtml(cmd.hint) + '</span>' +
       '</div>';
-    }).join('');
-    drop.style.display = 'block';
+    });
+    html += '<div class="chat-cmd-foot">' +
+      '<span><kbd>&#8593;</kbd><kbd>&#8595;</kbd> navigate</span>' +
+      '<span><kbd>Enter</kbd> select</span>' +
+    '</div>';
+    list.innerHTML = html;
+    openChatCommandMenu();
+    syncChatCmdActive();
+  }
+
+  function openChatCommandMenu() {
+    const drop = document.getElementById('ringCmdDropdown');
+    const input = document.getElementById('chatInput');
+    if (drop) drop.style.display = 'block';
+    if (input) input.setAttribute('aria-expanded', 'true');
   }
 
   function closeChatCommandMenu() {
     const drop = document.getElementById('ringCmdDropdown');
+    const input = document.getElementById('chatInput');
     if (drop) drop.style.display = 'none';
+    chatCmdMatches = [];
+    chatCmdIndex = -1;
+    if (input) {
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
+    }
+  }
+
+  function syncChatCmdActive() {
+    const list = document.getElementById('chatCmdMenuList');
+    const input = document.getElementById('chatInput');
+    if (!list) return;
+    const rows = list.querySelectorAll('[data-cmd-index]');
+    for (var i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const isActive = Number(row.getAttribute('data-cmd-index')) === chatCmdIndex;
+      row.classList.toggle('active', isActive);
+      row.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (isActive) {
+        row.scrollIntoView({ block: 'nearest' });
+        if (input) input.setAttribute('aria-activedescendant', row.id);
+      }
+    }
+  }
+
+  function moveChatCmdActive(delta) {
+    if (!chatCmdMatches.length) return;
+    chatCmdIndex = (chatCmdIndex + delta + chatCmdMatches.length) % chatCmdMatches.length;
+    syncChatCmdActive();
   }
 
   function refreshChatCommandMenu() {
-    const drop = document.getElementById('ringCmdDropdown');
-    if (!drop || drop.style.display !== 'block') return;
+    if (!isChatCommandMenuOpen()) return;
     const input = document.getElementById('chatInput');
-    renderChatCommandMenu(input ? input.value : '@');
+    renderChatCommandMenu(input ? input.value : '@', true);
   }
 
   function handleChatInput(e) {
@@ -3779,26 +3885,45 @@ export function roomPage(
     renderChatCommandMenu(val);
   }
 
-  function handleChatCommandPick(e) {
-    const option = e.target.closest ? e.target.closest('[data-cmd-value]') : null;
-    if (!option) return;
-    const value = option.getAttribute('data-cmd-value') || '';
-    const isComplete = option.getAttribute('data-cmd-complete') === '1';
+  function activateChatCommand(cmd) {
     const input = document.getElementById('chatInput');
-    e.preventDefault();
     closeChatCommandMenu();
-    if (!isComplete) {
+    if (!cmd) return;
+    if (!cmd.complete) {
       if (input) {
-        input.value = value;
+        input.value = cmd.value;
         input.focus();
       }
       return;
     }
     if (input) input.value = '';
-    void handleEntityChatCommand(value).catch(function(err) {
+    void handleEntityChatCommand(cmd.value).catch(function(err) {
       console.error('[entity] command failed', err);
       showToast(err && err.message ? err.message : 'Entity command failed', 'error');
     });
+  }
+
+  function chatCmdRowFrom(e) {
+    if (!e.target || !e.target.closest) return null;
+    const row = e.target.closest('[data-cmd-index]');
+    if (!row) return null;
+    const idx = Number(row.getAttribute('data-cmd-index'));
+    return { row: row, index: idx, cmd: chatCmdMatches[idx] };
+  }
+
+  function handleChatCommandPick(e) {
+    const hit = chatCmdRowFrom(e);
+    if (!hit) return;
+    e.preventDefault();
+    activateChatCommand(hit.cmd);
+  }
+
+  // Keep the pointer and the keyboard pointing at the same row.
+  function handleChatCommandHover(e) {
+    const hit = chatCmdRowFrom(e);
+    if (!hit || hit.index === chatCmdIndex) return;
+    chatCmdIndex = hit.index;
+    syncChatCmdActive();
   }
 
   function openChatPanel() {
@@ -4596,7 +4721,10 @@ export function roomPage(
   });
 
   const chatCmdDropdownEl = document.getElementById('ringCmdDropdown');
-  if (chatCmdDropdownEl) chatCmdDropdownEl.addEventListener('click', handleChatCommandPick);
+  if (chatCmdDropdownEl) {
+    chatCmdDropdownEl.addEventListener('click', handleChatCommandPick);
+    chatCmdDropdownEl.addEventListener('mouseover', handleChatCommandHover);
+  }
 
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
