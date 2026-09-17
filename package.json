@@ -10,7 +10,8 @@
     "dev": "bun --hot run index.ts",
     "dev:all": "echo Run two terminals: npm run dev  AND  bun run worker",
     "mcp": "cd mcp-server && uv run uvicorn app.main:app --host 0.0.0.0 --port 8100",
-    "events:proof": "bun run scripts/events-proof.ts"
+    "events:proof": "bun run scripts/events-proof.ts",
+    "check:room": "bun run scripts/check-room-render.ts"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1098.0",

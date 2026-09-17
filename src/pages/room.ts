@@ -317,18 +317,8 @@ export function roomPage(
       </div>
       <div class="chat-input-area" style="position:relative">
         <!-- @ring command dropdown -->
-        <div id="ringCmdDropdown" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:50">
-          <div id="ringCmdOption" onclick="selectRingCmd()" style="display:flex;align-items:center;gap:12px;padding:11px 14px;cursor:pointer;transition:background .15s" onmouseenter="this.style.background='rgba(209,80,0,.12)'" onmouseleave="this.style.background='transparent'">
-            <div style="width:34px;height:34px;border-radius:9px;background:rgba(209,80,0,.15);border:1px solid rgba(209,80,0,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.47 2 2 0 0 1 3.58 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.8a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16.92z"/>
-              </svg>
-            </div>
-            <div>
-              <div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.9)">@ring</div>
-              <div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:1px">Call someone to join this meeting</div>
-            </div>
-          </div>
+        <div id="ringCmdDropdown" style="display:none;position:absolute;bottom:calc(100% + 6px);left:0;right:0;background:#1e1e1e;border:1px solid rgba(255,255,255,.12);border-radius:12px;overflow-y:auto;max-height:min(46vh,300px);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:50">
+          <div id="chatCmdMenuList"></div>
         </div>
         <div class="chat-input-wrap">
           <input class="chat-input" id="chatInput" placeholder="${hasAgentHost ? 'Message everyone… (@agent to instruct the AI co-host)' : 'Message everyone… (type @ for commands)'}" onkeydown="handleChatKey(event)" oninput="handleChatInput(event)" />
@@ -2404,7 +2394,7 @@ export function roomPage(
     } catch (e) {
       // Demo / offline mode — generate a local ID so the invite can still be sent
       if (window._treeCanvas) {
-        nodeId = name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+        nodeId = name.toLowerCase().replace(/\\s+/g, '-') + '-' + Date.now();
         window._treeCanvas.addNode({ id: nodeId, label: name, parentId, adminName, participants: 0 });
         updateTreeBadge();
       }
@@ -2787,6 +2777,7 @@ export function roomPage(
     syncWhiteboardEntityUi();
     syncBrowserEntityUi();
     syncEntityControls();
+    refreshChatCommandMenu();
     updateLayout();
   }
 
@@ -3005,14 +2996,23 @@ export function roomPage(
     window.open(NEKO_EMBED_URL, '_blank', 'noopener,noreferrer');
   }
 
+  // Pasted commands often carry a non-breaking space or trailing punctuation
+  // picked up from the surrounding help text.
+  function normalizeCommandText(raw) {
+    return String(raw || '')
+      .replace(/[\\u00a0\\u2000-\\u200a\\u202f\\u205f\\u3000]/g, ' ')
+      .trim()
+      .replace(/[,.;]+$/, '');
+  }
+
   function parseEntityLifecycleCommand(raw) {
-    var match = String(raw || '').trim().match(/^@(add|remove)\s+(whiteboard|browser)\s*$/i);
+    var match = normalizeCommandText(raw).match(/^@(add|remove)\\s+(whiteboard|browser)\\s*$/i);
     if (!match) return null;
     return { action: match[1].toLowerCase(), entityType: match[2].toLowerCase() };
   }
 
   function parseEntityTargetCommand(raw) {
-    var match = String(raw || '').trim().match(/^@(whiteboard|browser)\s+([a-z-]+)\s*$/i);
+    var match = normalizeCommandText(raw).match(/^@(whiteboard|browser)\\s+([a-z-]+)\\s*$/i);
     if (!match) return null;
     return { entityType: match[1].toLowerCase(), command: match[2].toLowerCase() };
   }
@@ -3694,20 +3694,111 @@ export function roomPage(
     }
   }
 
-  function handleChatInput(e) {
-    const val = e.target.value;
-    const drop = document.getElementById('ringCmdDropdown');
-    if (val === '@') {
-      drop.style.display = 'block';
-    } else {
-      drop.style.display = 'none';
+  // Slash-style command palette. "complete" entries run on selection;
+  // the rest are inserted so the user can finish typing an argument.
+  const CHAT_COMMANDS = [
+    { label: '@ring', value: '@ring ', hint: 'Call someone to join this meeting', icon: 'phone' },
+    { label: '@add whiteboard', value: '@add whiteboard', hint: 'Add the whiteboard to this room', icon: 'board', complete: true, admin: true },
+    { label: '@remove whiteboard', value: '@remove whiteboard', hint: 'Remove the whiteboard from this room', icon: 'board', complete: true, admin: true },
+    { label: '@whiteboard expand', value: '@whiteboard expand', hint: 'Expand the whiteboard panel', icon: 'board', complete: true, admin: true },
+    { label: '@whiteboard dock', value: '@whiteboard dock', hint: 'Shrink the whiteboard back to the side panel', icon: 'board', complete: true, admin: true },
+    { label: '@add browser', value: '@add browser', hint: 'Add the virtual browser to this room', icon: 'globe', complete: true, admin: true, neko: true },
+    { label: '@remove browser', value: '@remove browser', hint: 'Remove the virtual browser from this room', icon: 'globe', complete: true, admin: true, neko: true },
+    { label: '@browser expand', value: '@browser expand', hint: 'Expand the virtual browser panel', icon: 'globe', complete: true, admin: true, neko: true },
+  ];
+
+  function chatCmdIconPaths(kind) {
+    if (kind === 'board') {
+      return '<rect x="3" y="3" width="18" height="18" rx="2"/>' +
+        '<line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>';
     }
+    if (kind === 'globe') {
+      return '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/>' +
+        '<path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>';
+    }
+    return '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 ' +
+      '19.79 19.79 0 0 1 1.61 3.47 2 2 0 0 1 3.58 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 ' +
+      '2.11L7.91 8.8a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 21.5 16.92z"/>';
   }
 
-  function selectRingCmd() {
-    document.getElementById('chatInput').value = '@ring ';
-    document.getElementById('ringCmdDropdown').style.display = 'none';
-    document.getElementById('chatInput').focus();
+  function availableChatCommands(filter) {
+    const needle = normalizeCommandText(filter).toLowerCase();
+    return CHAT_COMMANDS.filter(function(cmd) {
+      if (cmd.admin && !entityAdmin) return false;
+      if (cmd.neko && !NEKO_ENABLED) return false;
+      if (!needle || needle === '@') return true;
+      return cmd.label.indexOf(needle) === 0;
+    });
+  }
+
+  function renderChatCommandMenu(filter) {
+    const list = document.getElementById('chatCmdMenuList');
+    const drop = document.getElementById('ringCmdDropdown');
+    if (!list || !drop) return;
+    const matches = availableChatCommands(filter);
+    if (!matches.length) {
+      list.innerHTML = '';
+      drop.style.display = 'none';
+      return;
+    }
+    list.innerHTML = matches.map(function(cmd) {
+      return '<div class="chat-cmd-option" data-cmd-value="' + escapeHtml(cmd.value) + '"' +
+        (cmd.complete ? ' data-cmd-complete="1"' : '') + '>' +
+        '<div class="chat-cmd-icon">' +
+          '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#D15000" stroke-width="2.5">' +
+          chatCmdIconPaths(cmd.icon) +
+          '</svg>' +
+        '</div>' +
+        '<div class="chat-cmd-text">' +
+          '<div class="chat-cmd-label">' + escapeHtml(cmd.label) + '</div>' +
+          '<div class="chat-cmd-hint">' + escapeHtml(cmd.hint) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    drop.style.display = 'block';
+  }
+
+  function closeChatCommandMenu() {
+    const drop = document.getElementById('ringCmdDropdown');
+    if (drop) drop.style.display = 'none';
+  }
+
+  function refreshChatCommandMenu() {
+    const drop = document.getElementById('ringCmdDropdown');
+    if (!drop || drop.style.display !== 'block') return;
+    const input = document.getElementById('chatInput');
+    renderChatCommandMenu(input ? input.value : '@');
+  }
+
+  function handleChatInput(e) {
+    const val = e.target.value;
+    if (val.charAt(0) !== '@') {
+      closeChatCommandMenu();
+      return;
+    }
+    renderChatCommandMenu(val);
+  }
+
+  function handleChatCommandPick(e) {
+    const option = e.target.closest ? e.target.closest('[data-cmd-value]') : null;
+    if (!option) return;
+    const value = option.getAttribute('data-cmd-value') || '';
+    const isComplete = option.getAttribute('data-cmd-complete') === '1';
+    const input = document.getElementById('chatInput');
+    e.preventDefault();
+    closeChatCommandMenu();
+    if (!isComplete) {
+      if (input) {
+        input.value = value;
+        input.focus();
+      }
+      return;
+    }
+    if (input) input.value = '';
+    void handleEntityChatCommand(value).catch(function(err) {
+      console.error('[entity] command failed', err);
+      showToast(err && err.message ? err.message : 'Entity command failed', 'error');
+    });
   }
 
   function openChatPanel() {
@@ -3868,7 +3959,7 @@ export function roomPage(
     console.log('[@ring] sendChat', { msg });
     if (!msg) return;
     openChatPanel();
-    const lowerMsg = msg.trim().toLowerCase();
+    const lowerMsg = normalizeCommandText(msg).toLowerCase();
     const looksLikeEntityCommand =
       lowerMsg.indexOf('@add ') === 0 ||
       lowerMsg.indexOf('@remove ') === 0 ||
@@ -3876,7 +3967,7 @@ export function roomPage(
       lowerMsg.indexOf('@browser ') === 0;
     if (looksLikeEntityCommand) {
       input.value = '';
-      document.getElementById('ringCmdDropdown').style.display = 'none';
+      closeChatCommandMenu();
       void handleEntityChatCommand(msg).catch(function(e) {
         console.error('[entity] command failed', e);
         showToast(e && e.message ? e.message : 'Entity command failed', 'error');
@@ -3892,13 +3983,13 @@ export function roomPage(
       addSystemMessage(ringStatusIcon('warning') + ' Use: <strong>@ring email@example.com</strong>', true);
       showToast('Invalid @ring format. Use: @ring email@example.com', 'error');
       input.value = '';
-      document.getElementById('ringCmdDropdown').style.display = 'none';
+      closeChatCommandMenu();
       return;
     }
     if (ringEmail) {
       console.log('[@ring] matched email=' + ringEmail);
       input.value = '';
-      document.getElementById('ringCmdDropdown').style.display = 'none';
+      closeChatCommandMenu();
       showToast('Sending ring to ' + ringEmail + '…', 'info');
       void sendRing(ringEmail).catch(function(e) {
         console.error('[@ring] sendRing unhandled', e);
@@ -3919,6 +4010,7 @@ export function roomPage(
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
     input.value = '';
+    closeChatCommandMenu();
     if (livekitRoom) livekitRoom.localParticipant.publishData(
       new TextEncoder().encode(JSON.stringify({ type: 'chat', msg, name: userName })),
       { reliable: true }
@@ -4494,7 +4586,7 @@ export function roomPage(
     if (!e.target.closest('#reactionsPicker') && !e.target.closest('#reactBtn') && !e.target.closest('.more-menu-item'))
       document.getElementById('reactionsPicker').style.display = 'none';
     if (!e.target.closest('#ringCmdDropdown') && !e.target.closest('#chatInput'))
-      document.getElementById('ringCmdDropdown').style.display = 'none';
+      closeChatCommandMenu();
     if (!e.target.closest('.device-menu') && !e.target.closest('.ctrl-btn-caret')
         && !e.target.closest('.more-menu-item'))
       closeDeviceMenus();
@@ -4503,8 +4595,17 @@ export function roomPage(
     if (!window.matchMedia('(max-width: 860px)').matches) closeTopbarMenu();
   });
 
+  const chatCmdDropdownEl = document.getElementById('ringCmdDropdown');
+  if (chatCmdDropdownEl) chatCmdDropdownEl.addEventListener('click', handleChatCommandPick);
+
   document.addEventListener('keydown', function(e) {
     if (e.key !== 'Escape') return;
+    const cmdDrop = document.getElementById('ringCmdDropdown');
+    if (cmdDrop && cmdDrop.style.display === 'block') {
+      closeChatCommandMenu();
+      e.preventDefault();
+      return;
+    }
     if (deviceMenuOpenFor) {
       closeDeviceMenus();
       e.preventDefault();

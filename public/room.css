@@ -1176,6 +1176,43 @@ body.no-screen-share #shareBtn {
   color: rgba(255,255,255,.4);
 }
 
+/* ── Chat command palette (@ dropdown) ────────────────────────────────────── */
+.chat-cmd-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  transition: background .15s;
+}
+.chat-cmd-option:hover { background: rgba(209,80,0,.12); }
+.chat-cmd-option + .chat-cmd-option { border-top: 1px solid rgba(255,255,255,.06); }
+.chat-cmd-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: rgba(209,80,0,.15);
+  border: 1px solid rgba(209,80,0,.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.chat-cmd-text { min-width: 0; }
+.chat-cmd-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255,255,255,.9);
+}
+.chat-cmd-hint {
+  font-size: 11px;
+  color: rgba(255,255,255,.4);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Waiting panel ────────────────────────────────────────────────────────── */
 .waiting-panel {
   display: none;
