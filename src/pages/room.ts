@@ -1179,6 +1179,8 @@ export function roomPage(
   const _serverRole = ${JSON.stringify(injectedRole)};
   const userRole  = _serverRole || urlParams.get('role') || 'participant'; // 'superadmin' | 'admin' | 'participant'
   const isAdmin   = userRole === 'superadmin' || userRole === 'admin';
+  // Entity management is authorized server-side; GET /features refines this.
+  let entityAdmin = isAdmin;
   const treeRoot  = urlParams.get('treeRoot') || ROOM_ID;
   const viewAsId  = urlParams.get('viewAs')   || (userRole === 'admin' ? ROOM_ID : null);
 
@@ -2544,7 +2546,23 @@ export function roomPage(
 
   function getEntityAccess(type) {
     const entity = getEntityState(type);
-    return entity && entity.access ? entity.access : { canView: false, canInteract: false };
+    if (!entity) return { canView: false, canInteract: false };
+    // The server ACL is open by default, so a missing access field must not
+    // hide an entity that is actually enabled.
+    if (!entity.access) return { canView: true, canInteract: true };
+    return entity.access;
+  }
+
+  function applyEntityState(entity) {
+    if (!entity || !entity.entityType) return;
+    const previous = roomEntities[entity.entityType];
+    const access = entity.access
+      || (previous && previous.access)
+      || { canView: true, canInteract: true };
+    const next = {};
+    Object.keys(entity).forEach(function(key) { next[key] = entity[key]; });
+    next.access = access;
+    roomEntities[entity.entityType] = next;
   }
 
   function participantKey(identity, email) {
@@ -2610,7 +2628,7 @@ export function roomPage(
   function renderPermissionsList() {
     const list = document.getElementById('permsList');
     if (!list) return;
-    if (!isAdmin) {
+    if (!entityAdmin) {
       list.textContent = 'Only meeting admins can edit room entity permissions.';
       return;
     }
@@ -2666,7 +2684,7 @@ export function roomPage(
   }
 
   async function setPermission(participantEmail, entityType, field, value) {
-    if (!isAdmin) {
+    if (!entityAdmin) {
       showToast('Only meeting admins can update room entity permissions', 'info');
       return;
     }
@@ -2701,14 +2719,16 @@ export function roomPage(
       const res = await fetch('/api/meetings/' + encodeURIComponent(activeRoomId) + '/features');
       const data = await res.json().catch(function() { return {}; });
       if (!res.ok) throw new Error(data.error || 'Could not load room entities');
+      // The server is the source of truth for entity admin rights, which can
+      // differ from the role injected into the page at load time.
+      if (typeof data.isAdmin === 'boolean') entityAdmin = data.isAdmin;
       if (Array.isArray(data.entities)) {
-        data.entities.forEach(function(entity) {
-          roomEntities[entity.entityType] = entity;
-        });
+        data.entities.forEach(applyEntityState);
       }
       renderRoomEntities();
       renderPermissionsList();
     } catch (e) {
+      console.warn('[entity] could not load room entities', e);
       if (!silent) showToast(e && e.message ? e.message : 'Could not load room entities', 'error');
     }
   }
@@ -2856,7 +2876,7 @@ export function roomPage(
   async function openWhiteboard() {
     const entity = getEntityState('whiteboard');
     if (!entity || !entity.enabled) {
-      showToast(isAdmin ? 'Use @add whiteboard in chat to enable it first' : 'Whiteboard is not active in this room', 'info');
+      showToast(entityAdmin ? 'Use @add whiteboard in chat to enable it first' : 'Whiteboard is not active in this room', 'info');
       return;
     }
     if (!getEntityAccess('whiteboard').canView) {
@@ -2924,7 +2944,7 @@ export function roomPage(
   function openVirtualBrowser() {
     const entity = getEntityState('browser');
     if (!entity || !entity.enabled) {
-      showToast(isAdmin ? 'Use @add browser in chat to enable it first' : 'Browser is not active in this room', 'info');
+      showToast(entityAdmin ? 'Use @add browser in chat to enable it first' : 'Browser is not active in this room', 'info');
       return;
     }
     if (!getEntityAccess('browser').canView) {
@@ -3005,13 +3025,20 @@ export function roomPage(
     });
     const data = await res.json().catch(function() { return {}; });
     if (!res.ok) throw new Error(data.error || ('Could not ' + action + ' ' + entityType));
+    // Trust the response immediately so the UI updates even if the follow-up
+    // sync request fails for any reason.
+    if (data.entity) {
+      applyEntityState(data.entity);
+      renderRoomEntities();
+    }
     await fetchRoomEntities(true);
     return data;
   }
 
   async function handleEntityChatCommand(msg) {
-    if (!isAdmin) {
+    if (!entityAdmin) {
       showToast('Only meeting admins can manage room entities', 'info');
+      addSystemMessage('Only meeting admins can add or remove room entities.');
       return true;
     }
     const lifecycle = parseEntityLifecycleCommand(msg);
@@ -3020,7 +3047,10 @@ export function roomPage(
       const label = lifecycle.entityType === 'whiteboard' ? 'Whiteboard' : 'Browser';
       addSystemMessage((lifecycle.action === 'add' ? 'Enabled ' : 'Removed ') + '<strong>' + label + '</strong> as a room entity.');
       if (lifecycle.action === 'add') {
-        if (lifecycle.entityType === 'whiteboard') void openWhiteboard();
+        // Reveal the stage first; mounting the entity can fail independently.
+        activeEntityType = lifecycle.entityType;
+        renderRoomEntities();
+        if (lifecycle.entityType === 'whiteboard') await openWhiteboard();
         else openVirtualBrowser();
       } else if (activeEntityType === lifecycle.entityType) {
         closeEntityFocus();
@@ -3036,6 +3066,8 @@ export function roomPage(
       if (targeted.command === 'collapse' || targeted.command === 'dock') closeEntityFocus();
       return true;
     }
+    addSystemMessage('Unrecognized entity command. Use <strong>@add whiteboard</strong>, ' +
+      '<strong>@remove whiteboard</strong>, or <strong>@whiteboard expand</strong>.');
     return false;
   }
 

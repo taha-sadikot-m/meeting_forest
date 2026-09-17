@@ -143,12 +143,18 @@ async function getMeetingAdminContext(email: string, mid: string): Promise<{
   label: string;
   adminName: string;
 }> {
-  let label = mid;
-  let adminName = "Host";
+  const label = mid;
+  const adminName = "Host";
+  // Session email casing can differ from the stored :User.email, so compare
+  // case-insensitively instead of relying on an exact property match.
+  const normalizedEmail = normEmail(email || "");
+  if (!normalizedEmail) return { authorized: false, label, adminName };
+
   const creatorRecs = await runQuery(
-    "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $mid}) " +
+    "MATCH (u:User)-[:CREATED]->(m:Meeting {id: $mid}) " +
+    "WHERE toLower(u.email) = $email " +
     "RETURN m.label AS label, m.adminName AS adminName",
-    { email, mid }
+    { email: normalizedEmail, mid }
   );
   if (creatorRecs.length) {
     return {
@@ -159,10 +165,11 @@ async function getMeetingAdminContext(email: string, mid: string): Promise<{
   }
 
   const adminRecs = await runQuery(
-    "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) " +
-    "WHERE r.role IN ['admin', 'superadmin'] AND r.leftAt IS NULL " +
+    "MATCH (u:User)-[r:PARTICIPATES_IN]->(m:Meeting {id: $mid}) " +
+    "WHERE toLower(u.email) = $email " +
+    "AND r.role IN ['admin', 'superadmin'] AND r.leftAt IS NULL " +
     "RETURN m.label AS label, m.adminName AS adminName",
-    { email, mid }
+    { email: normalizedEmail, mid }
   );
   if (adminRecs.length) {
     return {
@@ -172,6 +179,7 @@ async function getMeetingAdminContext(email: string, mid: string): Promise<{
     };
   }
 
+  console.warn("[entity] admin check failed", { email: normalizedEmail, meetingId: mid });
   return { authorized: false, label, adminName };
 }
 
@@ -530,8 +538,9 @@ serve({
         let isCreator = false;
         try {
           const cr = await runQuery(
-            "MATCH (u:User {email: $email})-[:CREATED]->(m:Meeting {id: $roomId}) RETURN m.privacy AS privacy",
-            { email: session.email, roomId }
+            "MATCH (u:User)-[:CREATED]->(m:Meeting {id: $roomId}) " +
+            "WHERE toLower(u.email) = $email RETURN m.privacy AS privacy",
+            { email: normEmail(session.email), roomId }
           );
           if (cr.length > 0) {
             serverRole   = "superadmin";
@@ -568,9 +577,10 @@ serve({
               let isSubAdmin = false;
               try {
                 const ar = await runQuery(
-                  "MATCH (u:User {email: $email})-[r:PARTICIPATES_IN]->(m:Meeting {id: $roomId}) " +
-                  "WHERE r.role IN ['admin', 'superadmin'] RETURN r.role AS role",
-                  { email: session.email, roomId }
+                  "MATCH (u:User)-[r:PARTICIPATES_IN]->(m:Meeting {id: $roomId}) " +
+                  "WHERE toLower(u.email) = $email " +
+                  "AND r.role IN ['admin', 'superadmin'] RETURN r.role AS role",
+                  { email: normEmail(session.email), roomId }
                 );
                 isSubAdmin = ar.length > 0;
                 if (isSubAdmin) serverRole = "admin";
