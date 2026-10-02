@@ -23,10 +23,10 @@ export function servicesPage(user: { name: string; email: string }): string {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 32px;
-      min-height: 210px;
-      margin-bottom: 26px;
-      padding: 38px 42px;
+      gap: 24px;
+      min-height: 168px;
+      margin-bottom: 22px;
+      padding: 30px 34px;
       border: 1px solid rgba(209, 80, 0, .16);
       border-radius: 24px;
       background:
@@ -68,7 +68,7 @@ export function servicesPage(user: { name: string; email: string }): string {
       max-width: 670px;
       margin: 0 0 12px;
       color: var(--foreground);
-      font-size: clamp(30px, 4vw, 46px);
+      font-size: clamp(28px, 3vw, 38px);
       font-weight: 850;
       letter-spacing: -.045em;
       line-height: 1.06;
@@ -84,21 +84,21 @@ export function servicesPage(user: { name: string; email: string }): string {
       position: relative;
       z-index: 1;
       display: grid;
-      flex: 0 0 104px;
-      width: 104px;
-      height: 104px;
+      flex: 0 0 80px;
+      width: 80px;
+      height: 80px;
       place-items: center;
       border: 1px solid rgba(255, 255, 255, .7);
-      border-radius: 30px;
+      border-radius: 24px;
       background: linear-gradient(145deg, #ff8a38, var(--primary));
       box-shadow: 0 20px 38px rgba(209, 80, 0, .28);
       color: white;
-      font-size: 46px;
+      font-size: 36px;
       transform: rotate(5deg);
     }
     .services-catalogue {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 390px), 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
       gap: 22px;
     }
     .service-card {
@@ -106,10 +106,10 @@ export function servicesPage(user: { name: string; email: string }): string {
       isolation: isolate;
       overflow: hidden;
       display: grid;
-      grid-template-columns: 92px minmax(0, 1fr);
-      gap: 26px;
-      min-height: 340px;
-      padding: 34px;
+      grid-template-columns: 72px minmax(0, 1fr);
+      gap: 22px;
+      max-width: 720px;
+      padding: 28px;
       border: 1px solid var(--border);
       border-radius: 24px;
       background: white;
@@ -124,21 +124,21 @@ export function servicesPage(user: { name: string; email: string }): string {
     .service-card-glow {
       position: absolute;
       z-index: -1;
-      top: -110px;
-      left: -90px;
-      width: 270px;
-      height: 270px;
+      top: -80px;
+      left: -70px;
+      width: 200px;
+      height: 200px;
       border-radius: 50%;
       background: radial-gradient(circle, rgba(255, 150, 65, .20), transparent 68%);
       pointer-events: none;
     }
     .service-icon {
       display: grid;
-      width: 82px;
-      height: 82px;
+      width: 68px;
+      height: 68px;
       place-items: center;
       border: 1px solid rgba(209, 80, 0, .14);
-      border-radius: 24px;
+      border-radius: 20px;
       background: linear-gradient(145deg, #fff6ec, #ffe3c8);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 13px 28px rgba(209, 80, 0, .15);
       color: var(--primary);
@@ -174,19 +174,19 @@ export function servicesPage(user: { name: string; email: string }): string {
     .service-card h2 {
       margin: 0 0 10px;
       color: var(--foreground);
-      font-size: 27px;
+      font-size: 23px;
       letter-spacing: -.025em;
     }
     .service-summary {
-      margin: 0 0 18px;
+      margin: 0 0 14px;
       color: var(--muted-fg);
       font-size: 14px;
       line-height: 1.65;
     }
     .service-benefits {
       display: grid;
-      gap: 10px;
-      margin: 0 0 24px;
+      gap: 8px;
+      margin: 0 0 20px;
       padding: 0;
       color: #374151;
       font-size: 13px;
@@ -305,17 +305,16 @@ export function servicesPage(user: { name: string; email: string }): string {
     }
     @media (max-width: 700px) {
       .services-page { padding-bottom: 34px; }
-      .services-hero { min-height: auto; padding: 28px 24px; }
-      .services-hero h1 { font-size: 31px; }
+      .services-hero { min-height: auto; padding: 24px 20px; }
+      .services-hero h1 { font-size: 28px; }
       .services-hero-mark { display: none; }
       .service-card {
         grid-template-columns: 1fr;
-        gap: 20px;
-        min-height: 0;
-        padding: 26px 22px;
+        gap: 18px;
+        padding: 22px 18px;
       }
       .service-card:hover { transform: none; }
-      .service-icon { width: 70px; height: 70px; border-radius: 20px; }
+      .service-icon { width: 60px; height: 60px; border-radius: 18px; }
       .service-cta { width: 100%; }
       .service-success-modal { padding: 34px 24px 28px; }
     }
@@ -343,7 +342,7 @@ ${mobileShell("Other Services")}
     <article class="service-card service-card-email">
       <div class="service-card-glow" aria-hidden="true"></div>
       <div class="service-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
           <rect x="3" y="5" width="18" height="14" rx="3"/>
           <path d="m4 7 8 6 8-6"/>
           <path d="M17 2v4M15 4h4"/>

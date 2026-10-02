@@ -27,6 +27,8 @@ const checks: Check[] = [
     name: "focus restoration",
     ok: html.includes("emailAssistantPreviousFocus.focus()"),
   },
+  { name: "card width capped", ok: html.includes("max-width: 720px") },
+  { name: "no fixed card height", ok: !html.includes("min-height: 340px") },
 ];
 
 const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
