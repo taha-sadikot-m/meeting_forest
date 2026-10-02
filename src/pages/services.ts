@@ -12,19 +12,14 @@ export function servicesPage(user: { name: string; email: string }): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meeting Forest — Other Services</title>
+  <title>Meeting Forest — Email Assistant</title>
   <link rel="stylesheet" href="/public/styles.css?v=2" />
   ${sidebarCollapseInitScript(user)}
   <style>
-    .services-page { padding-bottom: 56px; }
+    .services-page { padding-bottom: 48px; max-width: 760px; }
     .services-hero {
       position: relative;
       overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 24px;
-      min-height: 168px;
       margin-bottom: 22px;
       padding: 30px 34px;
       border: 1px solid rgba(209, 80, 0, .16);
@@ -34,22 +29,11 @@ export function servicesPage(user: { name: string; email: string }): string {
         linear-gradient(135deg, #fffaf5 0%, #fff 58%, #fff4e8 100%);
       box-shadow: 0 18px 46px rgba(91, 45, 12, .08);
     }
-    .services-hero::after {
-      content: "";
-      position: absolute;
-      right: -90px;
-      bottom: -120px;
-      width: 260px;
-      height: 260px;
-      border: 42px solid rgba(209, 80, 0, .06);
-      border-radius: 50%;
-      pointer-events: none;
-    }
     .services-eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      margin-bottom: 13px;
+      margin-bottom: 12px;
       color: var(--primary);
       font-size: 12px;
       font-weight: 800;
@@ -65,8 +49,7 @@ export function servicesPage(user: { name: string; email: string }): string {
       box-shadow: 0 0 0 5px rgba(209, 80, 0, .10);
     }
     .services-hero h1 {
-      max-width: 670px;
-      margin: 0 0 12px;
+      margin: 0 0 10px;
       color: var(--foreground);
       font-size: clamp(28px, 3vw, 38px);
       font-weight: 850;
@@ -74,128 +57,46 @@ export function servicesPage(user: { name: string; email: string }): string {
       line-height: 1.06;
     }
     .services-hero p {
-      max-width: 590px;
-      margin: 0;
+      max-width: 560px;
+      margin: 0 0 18px;
       color: var(--muted-fg);
       font-size: 15px;
       line-height: 1.65;
     }
-    .services-hero-mark {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      flex: 0 0 80px;
-      width: 80px;
-      height: 80px;
-      place-items: center;
-      border: 1px solid rgba(255, 255, 255, .7);
-      border-radius: 24px;
-      background: linear-gradient(145deg, #ff8a38, var(--primary));
-      box-shadow: 0 20px 38px rgba(209, 80, 0, .28);
-      color: white;
-      font-size: 36px;
-      transform: rotate(5deg);
-    }
-    .services-catalogue {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
-      gap: 22px;
-    }
-    .service-card {
-      position: relative;
-      isolation: isolate;
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: 72px minmax(0, 1fr);
-      gap: 22px;
-      max-width: 720px;
-      padding: 28px;
+    .service-panel {
+      margin-bottom: 16px;
+      padding: 24px 28px;
       border: 1px solid var(--border);
-      border-radius: 24px;
-      background: white;
-      box-shadow: 0 16px 40px rgba(17, 24, 39, .08);
-      transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
-    }
-    .service-card:hover {
-      border-color: rgba(209, 80, 0, .28);
-      box-shadow: 0 24px 54px rgba(91, 45, 12, .14);
-      transform: translateY(-4px);
-    }
-    .service-card-glow {
-      position: absolute;
-      z-index: -1;
-      top: -80px;
-      left: -70px;
-      width: 200px;
-      height: 200px;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(255, 150, 65, .20), transparent 68%);
-      pointer-events: none;
-    }
-    .service-icon {
-      display: grid;
-      width: 68px;
-      height: 68px;
-      place-items: center;
-      border: 1px solid rgba(209, 80, 0, .14);
       border-radius: 20px;
-      background: linear-gradient(145deg, #fff6ec, #ffe3c8);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 13px 28px rgba(209, 80, 0, .15);
-      color: var(--primary);
+      background: white;
+      box-shadow: 0 10px 28px rgba(17, 24, 39, .05);
     }
-    .service-card-content {
-      display: flex;
-      min-width: 0;
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .service-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      margin-bottom: 14px;
-      padding: 6px 10px;
-      border: 1px solid #bbf7d0;
-      border-radius: 999px;
-      background: #f0fdf4;
-      color: #166534;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: .03em;
-      text-transform: uppercase;
-    }
-    .service-badge span {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #22c55e;
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, .13);
-    }
-    .service-card h2 {
+    .service-panel h2 {
       margin: 0 0 10px;
       color: var(--foreground);
-      font-size: 23px;
-      letter-spacing: -.025em;
+      font-size: 20px;
+      letter-spacing: -.02em;
     }
-    .service-summary {
-      margin: 0 0 14px;
+    .service-panel p {
+      margin: 0 0 10px;
       color: var(--muted-fg);
       font-size: 14px;
       line-height: 1.65;
     }
+    .service-panel p:last-child { margin-bottom: 0; }
     .service-benefits {
       display: grid;
-      gap: 8px;
-      margin: 0 0 20px;
+      gap: 10px;
+      margin: 0;
       padding: 0;
       color: #374151;
-      font-size: 13px;
+      font-size: 14px;
       line-height: 1.45;
       list-style: none;
     }
     .service-benefits li {
       position: relative;
-      padding-left: 25px;
+      padding-left: 26px;
     }
     .service-benefits li::before {
       content: "✓";
@@ -212,10 +113,26 @@ export function servicesPage(user: { name: string; email: string }): string {
       font-size: 11px;
       font-weight: 900;
     }
-    .service-cta {
-      min-width: 148px;
-      margin-top: auto;
-      justify-content: center;
+    .service-cta-band {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 22px 28px;
+      border-radius: 20px;
+      background: #111827;
+      color: white;
+    }
+    .service-cta-band h2 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      letter-spacing: -.02em;
+    }
+    .service-cta-band p {
+      margin: 0;
+      color: rgba(255, 255, 255, .72);
+      font-size: 13px;
+      line-height: 1.5;
     }
     .service-cta:focus-visible,
     .service-modal-x:focus-visible,
@@ -244,7 +161,6 @@ export function servicesPage(user: { name: string; email: string }): string {
       box-shadow: 0 30px 90px rgba(17, 24, 39, .28);
       text-align: center;
       outline: none;
-      animation: serviceModalIn .18s ease-out;
     }
     .service-modal-x {
       position: absolute;
@@ -299,69 +215,50 @@ export function servicesPage(user: { name: string; email: string }): string {
     .service-success-modal .btn { min-width: 132px; justify-content: center; }
     body.service-modal-open { overflow: hidden; }
     #startModal[hidden] { display: none !important; }
-    @keyframes serviceModalIn {
-      from { opacity: 0; transform: translateY(10px) scale(.98); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
     @media (max-width: 700px) {
-      .services-page { padding-bottom: 34px; }
-      .services-hero { min-height: auto; padding: 24px 20px; }
+      .services-hero { padding: 24px 20px; }
       .services-hero h1 { font-size: 28px; }
-      .services-hero-mark { display: none; }
-      .service-card {
-        grid-template-columns: 1fr;
-        gap: 18px;
-        padding: 22px 18px;
-      }
-      .service-card:hover { transform: none; }
-      .service-icon { width: 60px; height: 60px; border-radius: 18px; }
-      .service-cta { width: 100%; }
+      .service-panel { padding: 20px 18px; }
+      .service-cta-band { flex-direction: column; align-items: stretch; padding: 20px 18px; }
+      .service-cta { width: 100%; justify-content: center; }
       .service-success-modal { padding: 34px 24px 28px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .service-card, .service-success-modal { transition: none; animation: none; }
     }
   </style>
 </head>
-<body data-page="services">
+<body data-page="email-assistant">
 
-${appSidebar(user, "services")}
-${mobileShell("Other Services")}
+${appSidebar(user, "email-assistant")}
+${mobileShell("Email Assistant")}
 
 <div class="app-body"><main class="page services-page">
   <section class="services-hero" aria-labelledby="servicesTitle">
-    <div>
-      <span class="services-eyebrow">More from Meeting Forest</span>
-      <h1 id="servicesTitle">Services built around your workday</h1>
-      <p>Discover helpful tools available to registered Meeting Forest members.</p>
-    </div>
-    <div class="services-hero-mark" aria-hidden="true">✦</div>
+    <span class="services-eyebrow">Other Services</span>
+    <h1 id="servicesTitle">Email Assistant</h1>
+    <p>A smarter way to organize email, stay on top of follow-ups, and keep important conversations moving.</p>
+    <button class="btn btn-primary service-cta" id="emailAssistantStart" type="button">Get Started</button>
   </section>
 
-  <section class="services-catalogue" aria-label="Available services">
-    <article class="service-card service-card-email">
-      <div class="service-card-glow" aria-hidden="true"></div>
-      <div class="service-icon" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
-          <rect x="3" y="5" width="18" height="14" rx="3"/>
-          <path d="m4 7 8 6 8-6"/>
-          <path d="M17 2v4M15 4h4"/>
-        </svg>
-      </div>
-      <div class="service-card-content">
-        <span class="service-badge"><span aria-hidden="true"></span> Available now</span>
-        <h2>Email Assistant</h2>
-        <p class="service-summary">A smarter way to organize email, stay on top of follow-ups, and keep important conversations moving.</p>
-        <ul class="service-benefits">
-          <li>Inbox guidance tailored to your workflow</li>
-          <li>Clear next steps for important messages</li>
-          <li>Simple onboarding delivered to your email</li>
-        </ul>
-        <button class="btn btn-primary service-cta" id="emailAssistantStart" type="button">
-          Get Started
-        </button>
-      </div>
-    </article>
+  <section class="service-panel" aria-labelledby="aboutTitle">
+    <h2 id="aboutTitle">What it does</h2>
+    <p>Email Assistant helps you sort what needs a reply from what can wait. It turns a busy inbox into a short list of next steps, so follow-ups do not slip past the meeting that created them.</p>
+    <p>Getting started is simple. We send the setup instructions to the email on your Meeting Forest account. Nothing is connected until you follow those steps.</p>
+  </section>
+
+  <section class="service-panel" aria-labelledby="benefitsTitle">
+    <h2 id="benefitsTitle">Benefits</h2>
+    <ul class="service-benefits">
+      <li>Inbox guidance tailored to your workflow</li>
+      <li>Clear next steps for important messages</li>
+      <li>Simple onboarding delivered to your email</li>
+    </ul>
+  </section>
+
+  <section class="service-cta-band" aria-labelledby="readyTitle">
+    <div>
+      <h2 id="readyTitle">Ready when you are</h2>
+      <p>Start Email Assistant and we will send the instructions to your inbox.</p>
+    </div>
+    <button class="btn btn-primary service-cta" id="emailAssistantStartBottom" type="button">Get Started</button>
   </section>
 </main></div>
 
@@ -386,7 +283,10 @@ ${startMeetingModal(user)}
 ${sidebarShellScripts(user)}
 
 <script>
-  const emailAssistantTrigger = document.getElementById('emailAssistantStart');
+  const emailAssistantTriggers = [
+    document.getElementById('emailAssistantStart'),
+    document.getElementById('emailAssistantStartBottom'),
+  ];
   const emailAssistantModal = document.getElementById('emailAssistantModal');
   const emailAssistantDialog = emailAssistantModal
     ? emailAssistantModal.querySelector('[role="dialog"]')
@@ -410,9 +310,9 @@ ${sidebarShellScripts(user)}
     }
   }
 
-  if (emailAssistantTrigger) {
-    emailAssistantTrigger.addEventListener('click', openEmailAssistantModal);
-  }
+  emailAssistantTriggers.forEach(function(trigger) {
+    if (trigger) trigger.addEventListener('click', openEmailAssistantModal);
+  });
   document.getElementById('emailAssistantClose')?.addEventListener('click', closeEmailAssistantModal);
   document.getElementById('emailAssistantDone')?.addEventListener('click', closeEmailAssistantModal);
   emailAssistantModal?.addEventListener('click', function(event) {

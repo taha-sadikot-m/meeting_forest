@@ -4,10 +4,19 @@ const html = servicesPage({ name: "Check User", email: "check@example.com" });
 
 type Check = { name: string; ok: boolean; detail?: string };
 const checks: Check[] = [
-  { name: "services page marker", ok: html.includes('data-page="services"') },
-  { name: "active sidebar link", ok: html.includes('href="/services" class="sb-link active"') },
-  { name: "email assistant card", ok: html.includes("<h2>Email Assistant</h2>") },
+  { name: "email assistant page marker", ok: html.includes('data-page="email-assistant"') },
+  { name: "other services toggle", ok: html.includes('id="otherServicesToggle"') },
+  { name: "dropdown starts open", ok: html.includes('class="sb-group open" id="otherServicesGroup"') },
+  {
+    name: "email assistant nav link",
+    ok: html.includes('href="/services/email-assistant" class="sb-link active sb-sublink"'),
+  },
+  { name: "collapsed rail link", ok: html.includes('class="sb-link sb-group-rail"') },
+  { name: "landing title", ok: html.includes("<h1 id=\"servicesTitle\">Email Assistant</h1>") },
+  { name: "benefits copy", ok: html.includes("Inbox guidance tailored to your workflow") },
   { name: "get started button", ok: html.includes('id="emailAssistantStart"') },
+  { name: "second get started button", ok: html.includes('id="emailAssistantStartBottom"') },
+  { name: "catalogue card gone", ok: !html.includes("services-catalogue") },
   {
     name: "dialog semantics",
     ok: html.includes('role="dialog"') && html.includes('aria-modal="true"'),
@@ -27,8 +36,6 @@ const checks: Check[] = [
     name: "focus restoration",
     ok: html.includes("emailAssistantPreviousFocus.focus()"),
   },
-  { name: "card width capped", ok: html.includes("max-width: 720px") },
-  { name: "no fixed card height", ok: !html.includes("min-height: 340px") },
 ];
 
 const scriptMatches = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];

@@ -513,6 +513,11 @@ serve({
       return html(debriefsPage({ name: session.name, email: session.email }));
     }
     if (path === "/services") {
+      const target = "/services/email-assistant";
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(target));
+      return redirect(target);
+    }
+    if (path === "/services/email-assistant") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(servicesPage({ name: session.name, email: session.email }));
     }

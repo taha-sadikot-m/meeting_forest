@@ -161,6 +161,29 @@ body {
 }
 .sb-link.active svg { color: white; }
 
+button.sb-link {
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.sb-chevron { margin-left: auto; flex-shrink: 0; color: #aaa; transition: transform .15s; }
+.sb-group.open .sb-chevron { transform: rotate(180deg); }
+.sb-group-rail { display: none; }
+.sb-submenu { display: none; padding: 2px 0 6px 16px; }
+.sb-group.open .sb-submenu { display: block; }
+.sb-sublink { font-size: 12.5px; padding-left: 14px; }
+.sb-sublink span { overflow: hidden; text-overflow: ellipsis; }
+
+html.sidebar-collapsed .sb-group-toggle,
+html.sidebar-collapsed .sb-submenu,
+.sidebar.collapsed .sb-group-toggle,
+.sidebar.collapsed .sb-submenu { display: none !important; }
+html.sidebar-collapsed .sb-group-rail,
+.sidebar.collapsed .sb-group-rail { display: flex; }
+
 .sb-badge {
   margin-left: auto; background: var(--primary);
   color: white; border-radius: var(--r-full);
@@ -391,6 +414,9 @@ html.sidebar-collapsed .app-body { margin-left: 66px; }
   .app-body { margin-left: 0 !important; padding-top: 54px; }
   .page { padding: 20px 16px; }
   html.sidebar-collapsed .sidebar { width: var(--sb-width) !important; }
+  html.sidebar-collapsed .sb-group-toggle { display: flex !important; }
+  html.sidebar-collapsed .sb-group-rail { display: none !important; }
+  html.sidebar-collapsed .sb-group.open .sb-submenu { display: block !important; }
 }
 
 /* ── Toast notifications ──────────────────────────────────────────────────── */

@@ -9,7 +9,7 @@ export type AppPage =
   | "ai-rep"
   | "debriefs"
   | "agent"
-  | "services"
+  | "email-assistant"
   | "settings";
 
 function linkClass(active: AppPage, page: AppPage): string {
@@ -27,10 +27,13 @@ export function sidebarCollapseInitScript(user?: OpenReplayUser): string {
   </script>`;
 }
 
+const SERVICE_PAGES: AppPage[] = ["email-assistant"];
+
 export function appSidebar(user: { name: string; email: string }, active: AppPage): string {
   const initial = user.name[0]?.toUpperCase() || "?";
   const safeName = user.name.replace(/`/g, "'");
   const safeEmail = user.email.replace(/`/g, "'");
+  const servicesOpen = SERVICE_PAGES.includes(active);
 
   return /* html */`<aside class="sidebar" id="sidebar">
   <div class="sb-brand-wrapper">
@@ -110,15 +113,31 @@ export function appSidebar(user: { name: string; email: string }, active: AppPag
       </svg>
       <span>Debriefs</span>
     </a>
-    <a href="/services" class="${linkClass(active, "services")}" title="Other Services">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
-        <rect x="3" y="3" width="7" height="7" rx="1"/>
-        <rect x="14" y="3" width="7" height="7" rx="1"/>
-        <rect x="3" y="14" width="7" height="7" rx="1"/>
-        <path d="M17.5 14v7M14 17.5h7"/>
-      </svg>
-      <span>Other Services</span>
-    </a>
+    <div class="sb-group${servicesOpen ? " open" : ""}" id="otherServicesGroup" data-force-open="${servicesOpen ? "true" : "false"}">
+      <button type="button" class="sb-link sb-group-toggle" id="otherServicesToggle" title="Other Services" aria-expanded="${servicesOpen ? "true" : "false"}" aria-controls="otherServicesMenu" onclick="toggleOtherServices()">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <path d="M17.5 14v7M14 17.5h7"/>
+        </svg>
+        <span>Other Services</span>
+        <svg class="sb-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <a href="/services/email-assistant" class="sb-link sb-group-rail" title="Other Services">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7" rx="1"/>
+          <rect x="14" y="3" width="7" height="7" rx="1"/>
+          <rect x="3" y="14" width="7" height="7" rx="1"/>
+          <path d="M17.5 14v7M14 17.5h7"/>
+        </svg>
+      </a>
+      <div class="sb-submenu" id="otherServicesMenu">
+        <a href="/services/email-assistant" class="${linkClass(active, "email-assistant")} sb-sublink" title="Email Assistant">
+          <span>Email Assistant</span>
+        </a>
+      </div>
+    </div>
     <a href="/settings" class="${linkClass(active, "settings")}" title="Settings">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
@@ -238,6 +257,25 @@ export function sidebarShellScripts(user: { name: string; email: string }, inclu
     document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
     localStorage.setItem('sidebar-state', collapsed ? 'collapsed' : 'expanded');
   }
+
+  function toggleOtherServices() {
+    const group = document.getElementById('otherServicesGroup');
+    if (!group) return;
+    const open = group.classList.toggle('open');
+    const btn = document.getElementById('otherServicesToggle');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    localStorage.setItem('other-services-open', open ? 'open' : 'closed');
+  }
+
+  (function restoreOtherServices() {
+    const group = document.getElementById('otherServicesGroup');
+    if (!group) return;
+    const onService = group.dataset.forceOpen === 'true';
+    const open = onService || localStorage.getItem('other-services-open') === 'open';
+    group.classList.toggle('open', open);
+    const btn = document.getElementById('otherServicesToggle');
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  })();
 
   function openStartModal() {
     const el = document.getElementById('startModal');
