@@ -9,6 +9,7 @@ export type AppPage =
   | "ai-rep"
   | "debriefs"
   | "agent"
+  | "services"
   | "settings";
 
 function linkClass(active: AppPage, page: AppPage): string {
@@ -108,6 +109,15 @@ export function appSidebar(user: { name: string; email: string }, active: AppPag
         <polyline points="14 2 14 8 20 8"/>
       </svg>
       <span>Debriefs</span>
+    </a>
+    <a href="/services" class="${linkClass(active, "services")}" title="Other Services">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="7" height="7" rx="1"/>
+        <rect x="14" y="3" width="7" height="7" rx="1"/>
+        <rect x="3" y="14" width="7" height="7" rx="1"/>
+        <path d="M17.5 14v7M14 17.5h7"/>
+      </svg>
+      <span>Other Services</span>
     </a>
     <a href="/settings" class="${linkClass(active, "settings")}" title="Settings">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2">

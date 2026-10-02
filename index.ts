@@ -9,6 +9,7 @@ import { messagesPage } from "./src/pages/messages";
 import { aiMeetingSetupPage } from "./src/pages/ai-meeting-setup";
 import { aiRepSettingsPage } from "./src/pages/ai-rep-settings";
 import { debriefsPage } from "./src/pages/debriefs";
+import { servicesPage } from "./src/pages/services";
 import { settingsPage } from "./src/pages/settings";
 import { agentPage } from "./src/pages/agent";
 import { loginPage } from "./src/pages/login";
@@ -510,6 +511,10 @@ serve({
     if (path === "/debriefs") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
       return html(debriefsPage({ name: session.name, email: session.email }));
+    }
+    if (path === "/services") {
+      if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
+      return html(servicesPage({ name: session.name, email: session.email }));
     }
     if (path === "/settings") {
       if (!session) return redirect("/login?redirect=" + encodeURIComponent(path));
